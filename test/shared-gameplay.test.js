@@ -71,3 +71,11 @@ test('claiming a server base moves the owner marker, spawn, camera, and return b
  vm.runInContext(fn,ctx);ctx.claimBase(6);
  assert.equal(ctx.own,pads[6]);assert.equal(ctx.OWN.x,32);assert.equal(ctx.OWN.z,21);assert.equal(ctx.P.x,19);assert.equal(ctx.P.z,21);assert.equal(ctx.bcn.position.x,32);assert.equal(ctx.bcn.position.z,21);assert.equal(pads[6].name,'YOUR BASE');assert.equal(pads[0].name,'');
 });
+
+test('server rejects hits while carrying or stunned, broadcasts ragdolls to spectators, and allows recovery',async t=>{
+ const {env,owner,thief,p}=await pair(t);const spectator=await connect(env);await spectator.join('hb-testing');await owner.presence({px:p.x+1,pz:p.z,py:0,cb:7});
+ owner.emit('hit',{to:thief.id});await delay(60);assert.equal(thief.messages.some(m=>m.event==='hit'),false);
+ await owner.presence({cb:-1});owner.emit('hit',{to:thief.id});const hit=await thief.wait(m=>m.event==='hit');assert.equal(hit.data.duration,1.5);assert.ok(Math.abs(hit.data.vx)>17);await spectator.wait(m=>m.event==='hit'&&m.data.to===thief.id);
+ thief.emit('hit',{to:owner.id});await delay(60);assert.equal(owner.messages.some(m=>m.event==='hit'&&m.peer===thief.id),false);
+ await delay(1500);thief.emit('hit',{to:owner.id});await owner.wait(m=>m.event==='hit'&&m.peer===thief.id);
+});

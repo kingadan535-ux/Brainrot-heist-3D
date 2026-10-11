@@ -37,13 +37,13 @@ test('only signed-in owner can send events; sign-out revokes existing and replay
  const owner=await socket(env,cookie),viewer=await socket(env);
  for(const c of [owner,viewer]){c.ws.send(JSON.stringify({type:'join',room:'hb-owner'}));await c.wait(m=>m.type==='join')}
  viewer.ws.send(JSON.stringify({type:'emit',event:'evt',data:{k:'cash',v:10000}}));await delay(50);
- assert.equal(owner.messages.some(m=>m.type==='event'),false);
+ assert.equal(owner.messages.some(m=>m.type==='event'&&m.event==='evt'),false);
  owner.ws.send(JSON.stringify({type:'emit',event:'evt',data:{k:'cash',v:10000}}));
- await viewer.wait(m=>m.type==='event');
+ await viewer.wait(m=>m.type==='event'&&m.event==='evt');
  const logout=await env.post('logout',null,{Cookie:cookie});assert.equal(logout.status,200);
  await owner.wait(m=>m.type==='auth'&&m.ok===false);
  owner.ws.send(JSON.stringify({type:'emit',event:'evt',data:{k:'stop'}}));await delay(50);
- assert.equal(viewer.messages.filter(m=>m.type==='event').length,1);
+ assert.equal(viewer.messages.filter(m=>m.type==='event'&&m.event==='evt').length,1);
  const replay=await socket(env,cookie);assert.equal(replay.hello.admin,false);
 });
 test('owner sign-in blocks foreign origins, limits guesses, and preserves legacy token access',async t=>{

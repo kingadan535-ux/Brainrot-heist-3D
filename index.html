@@ -74,6 +74,8 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 .gb{width:52px;height:52px;font-size:11px}.gb svg{width:24px;height:24px}
 }
 @media(pointer:coarse) and (max-height:520px){#help{top:calc(200px + env(safe-area-inset-top,0px))}}
+@media(pointer:coarse),(max-width:560px){#act{left:150px;right:100px;transform:none;max-width:none}}
+#moveButtons{position:fixed;right:12px;bottom:100px;display:flex;flex-direction:column;gap:8px;z-index:4}.btn:disabled,.slot:disabled{opacity:.4;cursor:default}#sprint[aria-pressed="true"]{background:#4dff8a}@media(pointer:fine){#moveButtons{bottom:24px;flex-direction:row}}@media(max-height:520px){#moveButtons{right:94px;bottom:16px;flex-direction:row}}
 </style>
 <div id="top"><div id="net"></div><button class="btn" id="lock">Lock base</button></div>
 <div id="lside">
@@ -89,6 +91,7 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 <div id="carry" hidden><div id="carr">▲</div><div><b id="cname"></b><small id="cinfo"></small></div></div>
 <div id="joy"><div id="kn"></div></div>
 <button class="btn" id="act" hidden></button>
+<div id="moveButtons"><button class="btn" id="jump">Jump</button><button class="btn" id="sprint">Sprint</button></div>
 <div id="hb"><button class="slot" id="hit" aria-label="Bat"><i>1</i>🏏</button></div>
 
 <div id="evt" hidden></div>
@@ -108,8 +111,9 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 <div class="row"><button class="btn" id="cadd">Add auto-spawn</button><button class="btn" id="cclr">Clear auto-spawns</button></div><div id="alist"></div>
 <div class="row"><button class="btn" id="scash">$10K to everyone</button><button class="btn" id="sclr">Stop event</button><button class="btn" id="ownerlogout">Sign out</button><button class="btn" id="pc">Close</button></div></div>
 <div id="toast" role="status"></div>
-<div id="help">Drag the right side to look around. WASD, or touch and hold the left side, to run. E buys, steals, or uses your base console and elevator. Stolen brainrots must be carried home. F or the bat slot (1) bonks thieves and chasers.</div>
+<div id="help">Drag the right side to look around. WASD, or touch and hold the left side, to run. E buys, steals, or uses your base console and elevator. Stolen brainrots must be carried home. Space jumps. Hold Shift to sprint. F or the bat slot (1) bonks. Carrying blocks sprint and hitting; bonks knock you down for 1.5 seconds.</div>
 <script src="game-rules.js"></script>
+<script src="movement.js"></script>
 <script src="config.js"></script>
 <script src="network.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -583,20 +587,26 @@ const rollMut=i=>{if(!evt||!EVD[evt.k]||Math.random()*100>=CFG.mc)return i;retur
 const selIdx=()=>mutIdx(+asel.value,+$('#amut').value);
 $('#evbtns').innerHTML=Object.keys(EVD).map(k=>`<button class="btn" data-ev="${k}">${EVD[k].n}</button>`).join('');
 $('#amut').innerHTML='<option value="0">No mutation</option>'+MUT.map((m,x)=>`<option value="${x+1}">🧬 ${m.n} (×${m.im} income)</option>`).join('');
-$('#sx5').onclick=()=>{const i=selIdx();for(let n=0;n<5;n++){spawnBelt(i);room&&room.emit('evt',{k:'spawn',i}).catch(()=>{})}toast('Spawned ×5 '+B[i].n)};
+$('#sx5').onclick=()=>{const i=selIdx();for(let n=0;n<5;n++)requestSpawn(i);toast('Spawned ×5 '+B[i].n)};
 $('#sall').onclick=()=>{const ks=Object.keys(EVD);adminEvt(ks[Math.random()*ks.length|0])};
+let sharedBelt=false,worldSpeed=3,buyPending=false;const purchases=new Set();
+function clearBelt(){belt.forEach(o=>S.remove(o.g));belt=[];SQ.length=0;sharedBelt=false;buyPending=false}
+function onWorld(m){const d=m.data;if(!d||!Array.isArray(d.items))return;if(!sharedBelt){clearBelt();sharedBelt=true}worldSpeed=d.speed===6?6:3;const ids=new Set(d.items.map(o=>o.id));belt=belt.filter(o=>{if(ids.has(o.id))return true;S.remove(o.g);return false});for(const v of d.items){if(!B[v.i])continue;let o=belt.find(o=>o.id===v.id);if(!o){spawnNow(v.i);o=belt[belt.length-1];o.id=v.id}o.z=v.z;o.at=now();o.g.position.z=o.z}if(d.cfg)applyCfg(d.cfg);if(d.effect&&EVN[d.effect.k])startEvt(d.effect.k,Math.max(0,(d.effect.end-d.at)/1000),d.effect.id);else if(evt)evt=null}
+function onPurchase(m){const d=m.data||{};buyPending=false;if(!d.ok)return toast(d.message||'Purchase unavailable');if(purchases.has(d.id)||!B[d.bi])return;purchases.add(d.id);if(purchases.size>200)purchases.delete(purchases.values().next().value);mine[d.slot]=B[d.bi];cash=Math.max(0,cash-d.price);sync();save();toast((d.admin?'Added ':'Bought ')+B[d.bi].n)}
+function requestSpawn(i){if(room)room.emit('evt',{k:'spawn',i}).catch(()=>toast('Connect to a lobby first'));else spawnBelt(i)}
 const SQ=[];function spawnBelt(i){if(B[i]&&SQ.length<8)SQ.push(i)}
 function spawnNow(i){if(B[i].t>=3)rareFx(i);if(B[i].mu)mutSfx(B[i]);const g=build(i),e=B[i],lb=label(e.n,fmt(e.i)+'/s',RN[e.t],RC[e.t],1,fmt(e.p));lb.position.y=e.t>3?4.6:3.8;g.add(lb);g.position.set(0,.05,ZS);S.add(g);belt.push({i,g,z:ZS})}
 function startEvt(k,d,id){if(evt&&evt.id===id){evt.end=now()+d*1000;return}evt={k,id,end:now()+d*1000};toast(EVN[k]+' started!');evStart(k)}
 function adminEvt(k){const id=Math.random().toString(36).slice(2,8),d=+$('#adur').value;startEvt(k,d,id);room&&room.emit('evt',{k,d,id}).catch(()=>{})}
 function onEvt(m){const d=m.data||{};if(m.isMe)return;if(d.k==='cfg'){applyCfg(d.c);renderAuto()}else if(d.k==='spawn'){const i=d.i|0;if(B[i])spawnBelt(i)}else if(d.k==='cash'){cash+=Math.min(+d.v||0,1e6);toast('💸 Free cash from the owner!')}else if(d.k==='stop')evt=null;else if(EVN[d.k])startEvt(d.k,Math.min(+d.d||30,300),String(d.id))}
-function doHit(){const t=now();if(t<hitCd)return;hitCd=t+600;me.userData.sw=SWD;const fx=Math.sin(P.ry),fz=Math.cos(P.ry);let tg=null;
+function doHit(){const t=now();if(!BrainrotMovement.canHit(P,!!carry)||t<hitCd)return;hitCd=t+600;me.userData.sw=SWD;const fx=Math.sin(P.ry),fz=Math.cos(P.ry);let tg=null;
 for(const id in avs){const a=avs[id],dx=a.g.position.x-P.x,dz=a.g.position.z-P.z,d=Math.hypot(dx,dz);if(d<3.8+LV.bat*.5&&Math.abs(a.g.position.y-P.y)<2.5&&dx*fx+dz*fz>-.3*d){tg=id;break}}
 sync();room&&room.emit('hit',{to:tg}).catch(()=>{});
 if(tg)toast('💥 Bonk!');
 if(botAv&&raid&&raid.bot&&Math.hypot(botAv.position.x-P.x,botAv.position.z-P.z)<3.8+LV.bat*.5){raid=null;bar(false);toast('🏏 Bonked the thief! They ran off')}
 if(chaser){const dx=chaser.g.position.x-P.x,dz=chaser.g.position.z-P.z,d=Math.hypot(dx,dz)||1;if(d<3.8+LV.bat*.5&&dx*fx+dz*fz>-.3*d){chaser.vx=dx/d*14;chaser.vz=dz/d*14;chaser.stun=2.2;toast('🏏 Bonked the chaser!')}}}
-function onHit(m){if(m.isMe)return;const a=avs[m.peer];if(a)a.g.userData.sw=SWD;const d=m.data||{};if(d.to!==myPeer||!a)return;const dx=P.x-a.g.position.x,dz=P.z-a.g.position.z,l=Math.hypot(dx,dz)||1;P.vx=dx/l*16;P.vz=dz/l*16;P.stun=.9;if(heist){heist=null;bar(false)}if(carry&&carry.src.k==='bot')dropCarry('💥 Bonked!');else toast('💥 You got bonked!')}
+function onHit(m){const a=avs[m.peer];if(a)a.g.userData.sw=SWD;const d=m.data||{};const target=avs[d.to];if(target)target.ragUntil=now()+1500;if(d.to!==myPeer)return;BrainrotMovement.bonk(P,+d.vx||0,+d.vz||0);P.recoverAt=now()+1500;if(heist){heist=null;bar(false)}if(carry&&carry.src.k==='bot')dropCarry('💥 Bonked!');else toast('💥 Bonked! Recovering…')}
+function ragdollPose(g,remaining){g.rotation.x=remaining>0?Math.sin(remaining*12)*.35:0;g.rotation.z=remaining>0?1.4*Math.min(1,remaining*8):0;const u=g.userData;if(!(remaining>0)){u.L.forEach((l,i)=>l.rotation.z=i===2&&!u.nb?.32:0);return;}u.sw=0;u.L.forEach((l,i)=>{l.rotation.x=Math.sin(remaining*14+i*2)*.85;l.rotation.z=i%2?.3:-.3});u.E.forEach((e,i)=>e.rotation.x=.8+Math.sin(remaining*11+i)*.4);if(u.tl)u.tl.visible=false}
 /* ---------- carrying ---------- */
 function setCarry(g,i){const u=g.userData;if(u.cgi===i)return;if(u.cg){g.remove(u.cg);u.cg=u.cm=null}u.cgi=i;if(!(i>=0)||!B[i])return;const w=new THREE.Group(),m=build(i);w.add(m);w.scale.setScalar(.5);w.position.set(0,3.15,.1);g.add(w);u.cg=w;u.cm=m}
 function carryPose(g,t){const u=g.userData;if(u.bat&&!u.nb)u.bat.visible=!u.cg;if(!u.cg)return;u.L[0].rotation.x=-2.7;if(!(u.sw>0))u.L[2].rotation.x=-2.7;u.E[0].rotation.x=u.E[2].rotation.x=-.15;u.cg.position.y=3.15+Math.abs(Math.sin(t*10))*.05;anim(u.cm,t,.5)}
@@ -616,10 +626,10 @@ if(chaser){const g=chaser.g,dx=P.x-g.position.x,dz=P.z-g.position.z,d=Math.hypot
 g.position.x+=chaser.vx*dt;g.position.z+=chaser.vz*dt;const dk=Math.exp(-5*dt);chaser.vx*=dk;chaser.vz*=dk;
 if(chaser.stun>0){chaser.stun-=dt;walk(g,T,0)}else{if(d<1.8){const l=Math.hypot(dx,dz)||1;P.vx=dx/l*14;P.vz=dz/l*14;P.stun=.9;dropCarry('🚨 Caught!');return}g.position.x+=dx/d*sp*dt;g.position.z+=dz/d*sp*dt;g.rotation.y=ang(g.rotation.y,Math.atan2(dx,dz),1-Math.exp(-12*dt));chaser.ph+=dt*sp*1.15;walk(g,chaser.ph/10,1)}}
 const ci=$('#carry'),w=near<14&&!(chaser&&chaser.stun>0);ci.classList.toggle('warn',w);
-const inf=w?`⚠ Chaser close! Bonk it with F`:`Speed -${Math.round((1-carry.mul)*100)}% · Run to your base!`;if(inf!==carry.info){carry.info=inf;$('#cinfo').textContent=inf}
+const inf=w?`⚠ Chaser close! Keep moving!`:`Speed -${Math.round((1-carry.mul)*100)}% · Run to your base!`;if(inf!==carry.info){carry.info=inf;$('#cinfo').textContent=inf}
 const bx_=OWN.x-P.x,bz_=OWN.z-P.z,sy=Math.sin(CAM.y),cy_=Math.cos(CAM.y),xs=bx_*cy_-bz_*sy,us=-bx_*sy-bz_*cy_;$('#carr').style.transform=`rotate(${Math.atan2(xs,us)}rad)`}
 /* ---------- controls ---------- */
-const K={},J={x:0,y:0};addEventListener('keydown',e=>{if(e.target&&/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName))return;K[e.code]=1;if(e.code==='KeyE'||e.code==='Space'){e.preventDefault();doAct()}if(e.code==='KeyF'||e.code==='KeyQ'||e.code==='Digit1')doHit();});addEventListener('keyup',e=>K[e.code]=0);
+const K={},J={x:0,y:0};addEventListener('keydown',e=>{if(e.target&&/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName))return;K[e.code]=1;if(e.code==='KeyE'){e.preventDefault();doAct()}if(e.code==='Space'){e.preventDefault();if(!e.repeat)BrainrotMovement.jump(P)}if(e.code==='KeyF'||e.code==='KeyQ'||e.code==='Digit1')doHit();});addEventListener('keyup',e=>K[e.code]=0);
 const CAM={y:0,p:.3,d:11,ty:0,tp:.3,td:11},cv=R.domElement;let dr=null;
 cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);if(e.pointerType!=='mouse'&&jid===null&&e.clientX<innerWidth*.5){jstart(e);return}if(!dr)dr={id:e.pointerId,x:e.clientX,y:e.clientY}};
 cv.onpointermove=e=>{if(e.pointerId===jid){jm(e);return}if(!dr||e.pointerId!==dr.id)return;CAM.ty-=(e.clientX-dr.x)*.0065;CAM.tp=Math.max(.05,Math.min(1.35,CAM.tp+(e.clientY-dr.y)*.005));dr.x=e.clientX;dr.y=e.clientY};
@@ -631,10 +641,11 @@ function jstart(e){jid=e.pointerId;JC.x=Math.max(JR+6,Math.min(innerWidth-JR-6,e
 function jm(e){let dx=e.clientX-JC.x,dy=e.clientY-JC.y,l=Math.hypot(dx,dy);if(l>JR){JC.x+=dx/l*(l-JR);JC.y+=dy/l*(l-JR);JC.x=Math.max(JR+6,Math.min(innerWidth-JR-6,JC.x));JC.y=Math.max(JR+6,Math.min(innerHeight-JR-6,JC.y));jplace();dx=e.clientX-JC.x;dy=e.clientY-JC.y;l=Math.hypot(dx,dy)}const d=l<6?0:Math.min(1,l/JR),a=Math.atan2(dy,dx);J.x=Math.cos(a)*d;J.y=Math.sin(a)*d;kn.style.transform=`translate(${J.x*35}px,${J.y*35}px)`}
 function jend(){jid=null;J.x=J.y=0;kn.style.transform='';joy.classList.remove('on');joy.style.left=joy.style.top=joy.style.bottom=''}
 $('#act').onclick=()=>doAct();$('#hit').onclick=doHit;
+let touchSprint=false;$('#jump').onclick=()=>BrainrotMovement.jump(P);$('#sprint').onclick=()=>{touchSprint=!touchSprint;$('#sprint').setAttribute('aria-pressed',String(touchSprint))};addEventListener('blur',()=>{for(const k in K)delete K[k];touchSprint=false;jend()});
 const asel=$('#asel'),arar=$('#arar');function fillSel(){const q=arar.value;asel.innerHTML='';RN.forEach((rn,t)=>{if(q!=='all'&&+q!==t)return;const og=document.createElement('optgroup');og.label=`${rn} (${CNT[t]})`;B.forEach((b,i)=>{if(b.t===t&&!b.mu)og.appendChild(new Option(`${b.k?'🆕 ':''}${b.n} · ${fmt(b.p)} · ${fmt(b.i)}/s`,i))});asel.appendChild(og)})}arar.innerHTML='<option value="all">All rarities ('+N0+')</option>'+RN.map((n,t)=>`<option value="${t}">${n} (${CNT[t]})</option>`).join('');arar.onchange=fillSel;fillSel();
 $('#adm').onclick=()=>$('#panel').hidden=!$('#panel').hidden;$('#pc').onclick=$('#px').onclick=()=>$('#panel').hidden=true;
-$('#sbelt').onclick=()=>{const i=selIdx();spawnBelt(i);room&&room.emit('evt',{k:'spawn',i}).catch(()=>{});toast('Spawned '+B[i].n)};
-$('#sme').onclick=()=>{const f=free(),i=selIdx();if(f<0)return toast('Base is full');mine[f]=B[i];sync();toast('Added '+B[i].n)};
+$('#sbelt').onclick=()=>{const i=selIdx();requestSpawn(i);toast('Spawned '+B[i].n)};
+$('#sme').onclick=()=>{const f=free(),i=selIdx();if(f<0)return toast('Base is full');if(!room)return toast('Connect to your lobby first');sync();room.emit('grant',{i}).catch(()=>toast('Connection interrupted'))};
 $('#scash').onclick=()=>{cash+=10000;room&&room.emit('evt',{k:'cash',v:10000}).catch(()=>{});toast('Gave everyone $10K')};
 $('#sclr').onclick=()=>{evt=null;room&&room.emit('evt',{k:'stop'}).catch(()=>{})};
 document.querySelectorAll('[data-ev]').forEach(b=>b.onclick=()=>adminEvt(b.dataset.ev));
@@ -646,7 +657,7 @@ $('#cclr').onclick=()=>{CFG.auto=[];sendCfg()};
 $('#alist').onclick=e=>{const n=e.target.dataset.rm;if(n!==undefined){CFG.auto.splice(+n,1);sendCfg()}};renderAuto();
 $('#lock').onclick=()=>{const t=now();if(t<lockReady)return;lockEnd=t+15000;lockReady=t+45000-LV.lock*8000;toast('Base locked for 15s 🔒');sync()};
 $('#def').onclick=()=>{if(!raid||!raid.bot)return;raid.taps++;$('#pg').style.width=raid.taps/4*100+'%';if(raid.taps>=4){toast(`Defended ${mine[raid.slot].n}! 🛡️`);raid=null;bar(false)}};
-function doAct(){if(!act||heist||raid)return;if(carry&&act.t!=='buy')return toast('Drop off what you are carrying first!');if(act.t==='con'){CTAB='m';cfm=-1;return modal('con')}if(act.t==='f2')return buyF2();if(act.t==='lift'){P.fl=act.to;return toast(act.to?'Going up...':'Going down...')}if(act.t==='buy'){const o=act.o,b=B[o.i];if(!belt.includes(o))return;const f=free();if(cash<b.p)return toast('Not enough cash');if(f<0)return toast('Base is full');cash-=b.p;cpop('-'+fmt(b.p),'#ff4d4d');mine[f]=b;S.remove(o.g);belt=belt.filter(x=>x!==o);toast(`Bought ${b.n}!`);sync();return}
+function doAct(){if(P.stun>0||!act||heist||raid)return;if(carry)return toast('Drop off what you are carrying first!');if(act.t==='con'){CTAB='m';cfm=-1;return modal('con')}if(act.t==='f2')return buyF2();if(act.t==='lift'){P.fl=act.to;return toast(act.to?'Going up...':'Going down...')}if(act.t==='buy'){const o=act.o,b=B[o.i];if(!belt.includes(o))return;const f=free();if(cash<b.p)return toast('Not enough cash');if(f<0)return toast('Base is full');if(room){if(buyPending)return;if(!o.id)return toast('Waiting for the shared belt');buyPending=true;sync();room.emit('buy',{id:o.id}).catch(()=>{buyPending=false;toast('Connection interrupted')});setTimeout(()=>buyPending=false,3000);return}cash-=b.p;cpop('-'+fmt(b.p),'#ff4d4d');mine[f]=b;S.remove(o.g);belt=belt.filter(x=>x!==o);toast(`Bought ${b.n}!`);sync();return}
 const{rv,s,b}=act;if(free()<0)return toast('Free up a slot in your base first');
 if(rv.peer){heist={peer:rv.peer,b,t0:now(),nm:rv.name};sync();room.emit('steal',{to:rv.peer,slot:s,bi:B.indexOf(b)}).catch(()=>{heist=null;bar(false);toast('Connection interrupted')});bar(true,`Grabbing from ${rv.name}…`,false);return}
 heist={r:+rv.key.slice(1),s,b,t0:now(),dur:2200};bar(true,`Stealing ${b.n}…`,false)}
@@ -663,30 +674,34 @@ return Math.min(1,a.runSpeed/9)
 function resize(){R.setSize(innerWidth,innerHeight);C.aspect=innerWidth/innerHeight;C.updateProjectionMatrix()}addEventListener('resize',resize);resize();
 function step(){const t=now(),dt=Math.min((t-last)/1000,.05);last=t;T+=dt;DT=dt;const TT=evt&&evt.k==="disco"?T*1.8:T;
 let ix=(K.KeyD||K.ArrowRight?1:0)-(K.KeyA||K.ArrowLeft?1:0)+J.x,iz=(K.KeyS||K.ArrowDown?1:0)-(K.KeyW||K.ArrowUp?1:0)+J.y;const l=Math.hypot(ix,iz);if(l>1){ix/=l;iz/=l}
-const cs=Math.cos(CAM.y),sn=Math.sin(CAM.y),wx=ix*cs+iz*sn,wz=iz*cs-ix*sn,st=P.stun>0?(P.stun-=dt,.15):1,k=1-Math.exp(-9*dt);const SPD=10*(1+.1*LV.spd)*(carry?carry.mul:1);P.vx+=(wx*SPD*st-P.vx)*k;P.vz+=(wz*SPD*st-P.vz)*k;{const up=P.fl===1||P.y>.3;let nx=P.x+P.vx*dt,nz=P.z+P.vz*dt;if(up){nx=Math.max(OWN.x-HW+.9,Math.min(OWN.x+HW-.9,nx));nz=Math.max(OWN.z-HD+.9,Math.min(OWN.z+HD-.9,nz))}P.x=Math.max(-58,Math.min(58,nx));P.z=Math.max(-92,Math.min(92,nz));const dy=P.fl*FH-P.y;P.y+=Math.sign(dy)*Math.min(Math.abs(dy),9*dt)}
+const cs=Math.cos(CAM.y),sn=Math.sin(CAM.y),wx=ix*cs+iz*sn,wz=iz*cs-ix*sn;
+const locked=pads.map((p,i)=>i===myBaseSlot?t<lockEnd:peers.some(peer=>peer.baseSlot===i&&peer.presence.lk));
+if(P.recoverAt)P.stun=Math.max(0,(P.recoverAt-t)/1000);
+BrainrotMovement.step(P,{x:wx,z:wz,level:LV.spd,carrying:!!carry,carryMultiplier:carry?.mul,sprint:!!(K.ShiftLeft||K.ShiftRight||touchSprint)},dt,locked,myBaseSlot);
+$('#hit').disabled=!BrainrotMovement.canHit(P,!!carry);$('#sprint').disabled=!BrainrotMovement.canSprint(P,!!carry);$('#jump').disabled=P.stun>0;
 const spd=Math.hypot(P.vx,P.vz);if(spd>.6)P.ry=ang(P.ry,Math.atan2(P.vx,P.vz),1-Math.exp(-12*dt));
-me.position.set(P.x,P.y,P.z);me.rotation.y=P.ry;P.ph=(P.ph||0)+dt*spd*1.15;walk(me,P.ph/10,Math.min(1,spd/9));carryPose(me,T);
+me.position.set(P.x,P.y,P.z);me.rotation.y=P.ry;P.ph=(P.ph||0)+dt*spd*1.15;walk(me,P.ph/10,Math.min(1,spd/9));carryPose(me,T);ragdollPose(me,P.stun);if(P.stun>0)me.position.y+=.9;
 const ks=1-Math.exp(-16*dt);CAM.y+=(CAM.ty-CAM.y)*ks;CAM.p+=(CAM.tp-CAM.p)*ks;CAM.d+=(CAM.td-CAM.d)*ks;const cpp=CAM.p,cd=CAM.d;CT.set(P.x+Math.sin(CAM.y)*Math.cos(cpp)*cd,Math.max(.8,Math.sin(cpp)*cd+1.6)+P.y,P.z+Math.cos(CAM.y)*Math.cos(cpp)*cd);C.position.lerp(CT,1-Math.exp(-14*dt));C.lookAt(P.x,2.2+P.y,P.z);
 cash+=income()*dt*mult();sun.position.set(P.x+25,45,P.z+15);sun.target.position.set(P.x,0,P.z);
-if(t>nextSpawn){nextSpawn=t+(evt&&evt.k==='frenzy'?600:CFG.base*1000)+1000;spawnBelt(rollMut(pick(7)))}if(SQ.length&&belt.every(o=>o.z>ZS+7))spawnNow(SQ.shift());
-belt.forEach(o=>{o.z+=3*dt*(evt&&evt.k==='frenzy'?2:1);o.g.position.z=o.z;anim(o.g,TT,1)});belt=belt.filter(o=>{if(o.z>ZE){S.remove(o.g);return false}return true});
+if(!room&&t>nextSpawn){nextSpawn=t+(evt&&evt.k==='frenzy'?600:CFG.base*1000)+1000;spawnBelt(rollMut(pick(7)))}if(!room&&SQ.length&&belt.every(o=>o.z>ZS+7))spawnNow(SQ.shift());
+belt.forEach(o=>{if(sharedBelt)o.g.position.z=o.z+worldSpeed*Math.min(1,(t-o.at)/1000);else{o.z+=3*dt*(evt&&evt.k==='frenzy'?2:1);o.g.position.z=o.z;}anim(o.g,TT,1)});belt=belt.filter(o=>{if(o.z>ZE){S.remove(o.g);return false}return true});
 if(t>fcT){fcT=t+100;FC=field()}const F=FC;
 F.forEach(r=>{const p=pads[r.pad];if(p.nm!==r.name)nameBase(p,r.name);p.lz.visible=r.lk;setF2(p,r.f2);for(let q=0;q<16;q++)setSlot(p,q,r.s[q]||null)});{const oc=new Set(F.map(r=>r.pad));pads.forEach((p,i)=>{p.g.visible=true;if(p!==own&&!oc.has(i)){if(p.nm)nameBase(p,'');p.lz.visible=false;setF2(p,false);for(let q=0;q<16;q++)setSlot(p,q,null)}})}
 own.lz.visible=t<lockEnd;setF2(own,!!f2);for(let q=0;q<16;q++)setSlot(own,q,mine[q]);updPed();{const ins=inOwnBase(),cyy=C.position.y;own.roofL.visible=!own.on2&&!(ins&&cyy>FH-.3);if(own.f2g){own.roofH.visible=own.on2&&!(ins&&cyy>2*FH-.3);own.deck.visible=!(ins&&P.fl===0&&P.y<.5&&cyy>FH-.3)}}
 pads.forEach(p=>p.slots.forEach(o=>o.g&&anim(o.g,TT,0)));
 act=null;let best=4.2;
-if(!heist&&!raid){belt.forEach(o=>{const d=Math.hypot(P.x,P.z-o.z);if(d<best){best=d;act={t:'buy',o}}});F.forEach(r=>{if(r.lk||carry)return;r.s.forEach((b,q)=>{if(!b||q>7)return;const c=slotPos(pads[r.pad],q),d=Math.hypot(P.x-c.x,P.z-c.z);if(d<best){best=d;act={t:'steal',rv:r,s:q,b}}})});if(!carry){const dc=Math.hypot(P.x-own.con.x,P.z-own.con.z);if(P.fl===0&&dc<3.6&&dc<best){best=dc;act={t:'con'}}const dp=Math.hypot(P.x-own.ped.x,P.z-own.ped.z);if(dp<3.8&&dp<best){best=dp;act=f2?{t:'lift',to:P.fl?0:1}:{t:'f2'}}}}
+if(!heist&&!raid){belt.forEach(o=>{const d=Math.hypot(P.x,P.z-o.g.position.z);if(d<best){best=d;act={t:'buy',o}}});F.forEach(r=>{if(r.lk||carry)return;r.s.forEach((b,q)=>{if(!b||q>7)return;const c=slotPos(pads[r.pad],q),d=Math.hypot(P.x-c.x,P.z-c.z);if(d<best){best=d;act={t:'steal',rv:r,s:q,b}}})});if(!carry){const dc=Math.hypot(P.x-own.con.x,P.z-own.con.z);if(P.fl===0&&dc<3.6&&dc<best){best=dc;act={t:'con'}}const dp=Math.hypot(P.x-own.ped.x,P.z-own.ped.z);if(dp<3.8&&dp<best){best=dp;act=f2?{t:'lift',to:P.fl?0:1}:{t:'f2'}}}}
 actUI();
 if(t>nextStock){nextStock=t+8000;const r=rivals[Math.random()*rivals.length|0],i=r.s.indexOf(null);if(i>=0)r.s[i]=B[pick(3)];if(Math.random()<.4)rivals[Math.random()*rivals.length|0].lk=t+12000}
 if(heist&&heist.peer){$('#pg').style.width=Math.min((t-heist.t0)/7000,1)*100+'%';if(t-heist.t0>7500){heist=null;bar(false);toast('No response from that player')}}
 else if(heist){const p=(t-heist.t0)/heist.dur;$('#pg').style.width=Math.min(p,1)*100+'%';if(p>=1){const h=heist;heist=null;bar(false);const rv=rivals[h.r];if(rv.lk>t||rv.s[h.s]!==h.b)toast('Too late, it moved!');else if(Math.random()<Math.min(.2+h.b.i/2000,.6)){cash-=Math.floor(cash*.1);toast('🚨 Caught! Lost 10% cash')}else{rv.s[h.s]=null;startCarry(h.b,{k:'bot',r:h.r,s:h.s})}}}
-carryTick(t,dt,TT);tradeTick(t);
+if(!(P.stun>0))carryTick(t,dt,TT);tradeTick(t);
 if(!raid&&t>nextRaid){nextRaid=t+(evt&&evt.k==="blood"?5000:12000)+Math.random()*(evt&&evt.k==="blood"?3000:8000);const o=mine.map((b,i)=>b?i:-1).filter(i=>i>=0&&i<8);if(o.length&&t>lockEnd&&!heist){raid={slot:o[Math.random()*o.length|0],end:t+5500,taps:0,bot:true,who:rivals[Math.random()*rivals.length|0].name};botAv=person(0xff9f1c,{nb:1});{const q=slotPos(own,raid.slot);botAv.position.set(q.x+2.6,0,q.z);botAv.rotation.y=-Math.PI/2;const lb=label("Thief!");lb.position.y=3.4;botAv.add(lb);S.add(botAv)}bar(true,`🚨 ${raid.who} is stealing ${mine[raid.slot].n}! Whack them or tap Defend 4×`,true);$('#pg').style.width='0'}}
 if(raid&&t>raid.end){const b=mine[raid.slot];mine[raid.slot]=null;toast(`${raid.who} stole your ${b.n}! 😭`);raid=null;bar(false);sync()}
-const seen={};peers.forEach(p=>{const id=p.peer;seen[id]=1;let a=avs[id];const tx=+p.presence.px||0,tz=+p.presence.pz||0;if(!a){a=avs[id]={g:person(0x3d9bff)};a.g.position.set(tx,0,tz);const lb=label(String(p.presence.nm||'Player').slice(0,20));lb.position.y=3.4;a.g.add(lb);S.add(a.g)}const dx=tx-a.g.position.x,dz=tz-a.g.position.z,kk=1-Math.exp(-10*dt),ds=Math.hypot(dx,dz);a.g.position.x+=dx*kk;a.g.position.z+=dz*kk;a.g.position.y+=((+p.presence.py||0)-a.g.position.y)*kk;if(ds>.15)a.g.rotation.y=ang(a.g.rotation.y,Math.atan2(dx,dz),kk);const mv=remoteGait(a,ds*kk,dt);walk(a.g,a.ph/10,mv);setCarry(a.g,Number.isInteger(p.presence.cb)?p.presence.cb:-1);carryPose(a.g,T)});
+const seen={};peers.forEach(p=>{const id=p.peer;seen[id]=1;let a=avs[id];const tx=+p.presence.px||0,tz=+p.presence.pz||0;if(!a){a=avs[id]={g:person(0x3d9bff)};a.g.position.set(tx,0,tz);const lb=label(String(p.presence.nm||'Player').slice(0,20));lb.position.y=3.4;a.g.add(lb);S.add(a.g)}const dx=tx-a.g.position.x,dz=tz-a.g.position.z,kk=1-Math.exp(-10*dt),ds=Math.hypot(dx,dz);a.g.position.x+=dx*kk;a.g.position.z+=dz*kk;a.g.position.y+=((+p.presence.py||0)-a.g.position.y)*kk;if(ds>.15)a.g.rotation.y=ang(a.g.rotation.y,Math.atan2(dx,dz),kk);const mv=remoteGait(a,ds*kk,dt);walk(a.g,a.ph/10,mv);setCarry(a.g,Number.isInteger(p.presence.cb)?p.presence.cb:-1);carryPose(a.g,T);ragdollPose(a.g,Math.max(0,((a.ragUntil||0)-t)/1000));if(a.ragUntil>t)a.g.position.y+=.9*kk});
 for(const id in avs)if(!seen[id]){S.remove(avs[id].g);delete avs[id]}
 if(botAv){if(!raid){S.remove(botAv);botAv=null}else{walk(botAv,T,0);botAv.userData.L[0].rotation.x=-1.2+Math.sin(T*8)*.3;botAv.userData.L[2].rotation.x=-1.2+Math.sin(T*8+1)*.3}}
-updSign();[[3,CFG.g3],[4,CFG.g4]].forEach(([q,sec])=>{const v=tickKey('g'+q+'_'+sec,sec);if(v){const l=B.map((b,i)=>b.t===q&&!b.mu?i:-1).filter(i=>i>=0);spawnBelt(l[(Math.imul(v,2654435761)>>>0)%l.length]);toast(`⭐ Guaranteed ${RN[q]} arrived!`)}});CFG.auto.forEach(a=>{if(tickKey('a'+a.i+'_'+a.sec,a.sec))spawnBelt(a.i)});const eb=$('#evt');if(evt&&t>evt.end){evt=null;toast('Event over!')}if(evt){const q=Math.ceil((evt.end-t)/1000);eb.hidden=false;eb.textContent=`${EVN[evt.k]} ${Math.floor(q/60)}:${String(q%60).padStart(2,'0')}`}else eb.hidden=true;
+updSign();if(!room){[[3,CFG.g3],[4,CFG.g4]].forEach(([q,sec])=>{const v=tickKey('g'+q+'_'+sec,sec);if(v){const l=B.map((b,i)=>b.t===q&&!b.mu?i:-1).filter(i=>i>=0);spawnBelt(l[(Math.imul(v,2654435761)>>>0)%l.length]);toast(`⭐ Guaranteed ${RN[q]} arrived!`)}});CFG.auto.forEach(a=>{if(tickKey('a'+a.i+'_'+a.sec,a.sec))spawnBelt(a.i)})};const eb=$('#evt');if(evt&&t>evt.end){evt=null;toast('Event over!')}if(evt){const q=Math.ceil((evt.end-t)/1000);eb.hidden=false;eb.textContent=`${EVN[evt.k]} ${Math.floor(q/60)}:${String(q%60).padStart(2,'0')}`}else eb.hidden=true;
 atmo(dt,t);
 if(evt&&evt.k==='rain'&&t>nextCoin){nextCoin=t+220;const m=cy(S,.5,.12,0xffd700,(Math.random()-.5)*110,24,(Math.random()-.5)*170);m.rotation.x=Math.PI/2;m.userData.a=0;coins.push(m)}
 coins=coins.filter(m=>{m.position.y=Math.max(.7,m.position.y-10*dt);m.rotation.z+=dt*5;m.userData.a+=dt;if(Math.hypot(m.position.x-P.x,m.position.z-P.z)<2){{const v=Math.max(25,income()*4);cash+=v;cpop('+'+fmt(v),'#4dff6a')}S.remove(m);return false}if(m.userData.a>14){S.remove(m);return false}return true});
@@ -738,10 +753,10 @@ addEventListener('brainrot:auth',e=>applyOwnerAccess(e.detail));
 $('#ownerlogout').onclick=async()=>{try{const r=await fetch('/api/owner/logout',{method:'POST'});if(!r.ok)throw Error('Could not sign out');location.replace('/')}catch(error){toast(error.message)}};
 addEventListener('keydown',e=>{if(e.ctrlKey&&e.shiftKey&&e.code==='KeyA'){e.preventDefault();location.assign('/owner')}});
 netTxt();
-function resetNet(){restoreTaken();peers=[];myPeer=null;evt=null;OFFERS.length=0;for(const k in OUT)delete OUT[k];restoreEsc();TR.p='';if(heist&&heist.peer){heist=null;bar(false)}if(raid&&raid.thief){raid=null;bar(false)}if(carry&&carry.src.k==='peer')endCarry()}
+function resetNet(){clearBelt();restoreTaken();peers=[];myPeer=null;evt=null;OFFERS.length=0;for(const k in OUT)delete OUT[k];restoreEsc();TR.p='';if(heist&&heist.peer){heist=null;bar(false)}if(raid&&raid.thief){raid=null;bar(false)}if(carry&&carry.src.k==='peer')endCarry()}
 async function enter(code){if(!hub||joining)return false;joining=1;try{const r=await hub.join('hb-'+code),old=room;room=null;offs.forEach(f=>f());offs=[];if(old&&old!==r)old.leave().catch(()=>{});resetNet();room=r;lobby=code;
-offs.push(r.onPeers(c=>{const m=c.peers.find(p=>p.isMe);if(m){myPeer=m.peer;claimBase(m.baseSlot)}peers=c.peers.filter(p=>!p.isMe&&p.kind==='viewer'&&p.presence&&p.presence.nm);netTxt()}),r.on('theft',onTheft),r.on('hit',onHit),r.on('evt',onEvt),r.on('trade',onTrade));
-hub.presence({lb:code}).catch(()=>{});sync();netTxt();return true}catch(e){return false}finally{joining=0}}
+offs.push(r.onPeers(c=>{const m=c.peers.find(p=>p.isMe);if(m){myPeer=m.peer;claimBase(m.baseSlot)}peers=c.peers.filter(p=>!p.isMe&&p.kind==='viewer'&&p.presence&&p.presence.nm);for(const peer of peers)if(avs[peer.peer])avs[peer.peer].ragUntil=now()+(peer.presence.rag||0)*1000;netTxt()}),r.on('world',onWorld),r.on('purchase',onPurchase),r.on('theft',onTheft),r.on('hit',onHit),r.on('evt',onEvt),r.on('trade',onTrade));
+hub.presence({lb:code}).catch(()=>{});sync();r.emit('world',{}).catch(()=>{});netTxt();return true}catch(e){return false}finally{joining=0}}
 function lobbyHtml(){if(!hub)return '<h3>Multiplayer</h3><p>Online play is not available right now. The multiplayer server may be starting or reconnecting. You can keep playing solo.</p>';
 const pv=lobby&&!LBP.some(x=>x[0]===lobby),n=c=>lobbies[c]||0;
 return `<h3>Multiplayer</h3><p style="margin:0 0 8px;font-size:13px">You are in <b>${connectionState==='online'&&lobby?lbName(lobby):'Connecting…'}</b>${pv?` · share code <b style="letter-spacing:2px;color:#ffe14d">${lobby.toUpperCase()}</b>`:''}</p><div class="grid">${LBP.map(([c,nm])=>`<div class="it"><b>${nm}</b><br>${n(c)}/8 players<br><button class="btn" data-lj="${c}" ${c===lobby||n(c)>=8?'disabled':''}>${c===lobby?(connectionState==='online'?'Joined':'Reconnecting'):n(c)>=8?'Full':'Join'}</button></div>`).join('')}</div><p style="margin:12px 0 4px;font-size:13px">Have a lobby code?</p><div style="display:flex;gap:8px"><input id="lcode" maxlength="12" placeholder="ENTER CODE" value="${LCV}" autocapitalize="characters" autocomplete="off" style="flex:1;min-width:0;font:700 16px sans-serif;padding:8px;border-radius:8px;border:2px solid #fff;background:#2a2c38;color:#fff;text-transform:uppercase"><button class="btn" data-lgo style="margin-top:0">Join</button></div><button class="btn" data-lnew style="background:#1f9d55">Create private lobby</button>`}

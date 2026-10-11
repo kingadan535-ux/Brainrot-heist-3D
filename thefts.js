@@ -1,5 +1,6 @@
 const crypto=require('node:crypto');
 const rules=require('./game-rules');
+const movement=require('./movement');
 function createThefts({members,event,roster}){
  const active=new Map();
  const reserved=c=>new Set([...active.values()].filter(t=>t.owner===c).map(t=>t.slot));
@@ -26,7 +27,7 @@ function createThefts({members,event,roster}){
   if(!owner||owner===c||c.carryTheft||!Number.isInteger(slot)||slot<0||slot>7)return deny('Cannot steal that brainrot');
   const bi=owner.presence.s?.[slot];
   if(!Number.isInteger(bi)||bi<0||bi!==d.bi||owner.presence.lk||reserved(owner).has(slot))return deny('That brainrot moved or the base is locked');
-  if(!rules.near(c.presence,rules.slotPosition(owner.baseSlot,slot),5.5))return deny('Move closer to the brainrot');
+  if(!rules.near(c.presence,rules.slotPosition(owner.baseSlot,slot),5.5)||!movement.clearLine({x:c.presence.px,z:c.presence.pz},rules.slotPosition(owner.baseSlot,slot)))return deny('Move closer to the brainrot');
   if(free(c)<0)return deny('Free a slot in your base first');
   const t={id:crypto.randomUUID(),owner,thief:c,slot,bi};active.set(t.id,t);c.carryTheft=t.id;
   inventory(owner,slot,-1);c.presence.cb=bi;
@@ -37,6 +38,6 @@ function createThefts({members,event,roster}){
  function bank(c,d){const t=active.get(c.carryTheft);if(!t||d.id!==t.id)return;if(!rules.atBase(c.presence,c.baseSlot))return event(c,'theft',{kind:'bankBlocked',message:'Bring it inside your own base'});if(finish(t,'banked')===false)event(c,'theft',{kind:'bankBlocked',message:'Your base is full'})}
  function hit(target){const t=active.get(target.carryTheft);if(t)finish(t,'returned','bonk')}
  function release(c){for(const t of [...active.values()])if(t.owner===c||t.thief===c)finish(t,'returned','disconnect')}
- return {steal,bank,hit,release,applyPresence,active};
+ return {steal,bank,hit,release,applyPresence,active,free,inventory};
 }
 module.exports={createThefts};

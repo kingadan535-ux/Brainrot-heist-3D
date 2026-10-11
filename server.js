@@ -5,12 +5,15 @@ const crypto = require('crypto');
 const path = require('path');
 const { createOwnerAuth } = require('./owner-auth');
 const rules = require('./game-rules');
+const movement = require('./movement');
+const catalog = require('./game-catalog.json');
+const { createWorlds } = require('./shared-world');
 const { createThefts } = require('./thefts');
 
 function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey = process.env.OWNER_ACCESS_KEY || '' } = {}) {
   const app = express();
   app.get('/healthz', (_req, res) => res.json({ ok: true, protocol: 2 }));
-  for (const file of ['index.html', 'network.js', 'config.js', 'game-rules.js']) {
+  for (const file of ['index.html', 'network.js', 'config.js', 'game-rules.js', 'movement.js']) {
     app.get(file === 'index.html' ? ['/', '/index.html'] : '/' + file,
       (_req, res) => res.sendFile(path.join(__dirname, file)));
   }
@@ -39,10 +42,13 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
     if (!room) return;
     const list = members(room);
     for (const c of list) send(c.ws, { type: 'peers', room, peers: list.map(p => ({
-      peer: p.id, baseSlot: p.baseSlot, kind: 'viewer', presence: p.presence, isMe: p === c
+      peer: p.id, baseSlot: p.baseSlot, kind: 'viewer', presence: { ...p.presence, rag: Math.max(0, (p.stunUntil || 0) - Date.now()) / 1000 }, isMe: p === c
     })) });
   }
   const thefts = createThefts({ members, roster, event: (c, event, data) => send(c.ws, { type: 'event', room: c.room, event, peer: 'server', isMe: false, data }) });
+  const worlds = createWorlds({ members, roster, thefts, event: (c, event, data) => send(c.ws, { type: 'event', room: c.room, event, peer: 'server', isMe: false, data }) });
+  const worldTimer = setInterval(() => worlds.tick(), 100);
+  worldTimer.unref();
   wss.on('connection', (ws, req) => {
     const ownerSession = ownerAuth.sameOrigin(req) ? ownerAuth.read(req) : null;
     const c = { ws, id: crypto.randomUUID(), room: null, baseSlot: null, presence: {}, admin: !!ownerSession, ownerSession, alive: true };
@@ -66,12 +72,12 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
           thefts.release(c);
           const occupied = new Set(members(m.room).map(x => x.baseSlot));
           c.baseSlot = rules.bases.findIndex((_base, index) => !occupied.has(index));
-          c.presence = {}; c.inventoryPatches = new Map();
+          c.presence = {}; c.inventoryPatches = new Map(); c.stunUntil = 0;
         }
         c.room = m.room;
         send(ws, { type: 'join', room: c.room, ok: true, baseSlot: c.baseSlot });
         if (old !== c.room) roster(old);
-        roster(c.room); lobbies();
+        roster(c.room); lobbies(); worlds.snapshot(c);
       } else if (m.type === 'leave') {
         const old = c.room; thefts.release(c); c.room = null; c.baseSlot = null; c.presence = {}; c.inventoryPatches = new Map();
         roster(old); lobbies();
@@ -79,9 +85,10 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
         if (!c.room || !m.data || typeof m.data !== 'object' || Array.isArray(m.data)) return;
         const d = m.data, safe = {};
         if (typeof d.nm === 'string') safe.nm = d.nm.slice(0, 20);
-        if (Array.isArray(d.s)) safe.s = d.s.slice(0, 16).map(x => Number.isInteger(x) && x >= -1 && x < 1000 ? x : -1);
-        for (const k of ['px', 'pz', 'py', 'cash', 'cb'])
+        if (Array.isArray(d.s)) safe.s = d.s.slice(0, 16).map(x => Number.isInteger(x) && x >= -1 && x < catalog.items.length ? x : -1);
+        for (const k of ['px', 'pz', 'py', 'cb'])
           if (Number.isFinite(d[k])) safe[k] = Math.max(-1000000, Math.min(1000000, d[k]));
+        if (Number.isFinite(d.cash)) safe.cash = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, d.cash));
         if (typeof d.lk === 'boolean') safe.lk = d.lk;
         if (d.f2 === 0 || d.f2 === 1 || typeof d.f2 === 'boolean') safe.f2 = d.f2 ? 1 : 0;
         if (Number.isInteger(d.bat)) safe.bat = Math.max(0, Math.min(4, d.bat));
@@ -89,25 +96,35 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
         c.presence = { ...c.presence, ...safe };
         roster(c.room);
       } else if (m.type === 'emit') {
-        if (!c.room || !['steal', 'bank', 'hit', 'evt', 'trade'].includes(m.event) ||
+        if (!c.room || !['steal', 'bank', 'hit', 'evt', 'trade', 'world', 'buy', 'grant'].includes(m.event) ||
           !m.data || typeof m.data !== 'object' || Array.isArray(m.data)) return;
         if (c.ownerSession && c.ownerSession.expires <= Date.now()) { c.admin = false; c.ownerSession = null; send(ws, { type: 'auth', ok: false }); }
-        if (m.event === 'evt' && !c.admin) return;
+        if (['evt', 'grant'].includes(m.event) && !c.admin) return;
         if (m.data.to !== undefined && m.data.to !== null && typeof m.data.to !== 'string') return;
+        if (m.event === 'world') { worlds.snapshot(c); return; }
+        if (m.event === 'grant') { worlds.grant(c, m.data); return; }
+        if (m.event === 'evt' && worlds.admin(c, m.data)) return;
+        if (c.stunUntil > Date.now() && ['steal', 'bank', 'hit', 'buy', 'trade'].includes(m.event)) return;
+        if (m.event === 'buy') { worlds.buy(c, m.data); return; }
         if (m.event === 'steal') { thefts.steal(c, m.data); return; }
         if (m.event === 'bank') { thefts.bank(c, m.data); return; }
         if (m.event === 'hit') {
           const time = Date.now();
-          if (time - (c.lastHit || 0) < 550) return;
+          if (c.carryTheft || c.presence.cb >= 0 || time - (c.lastHit || 0) < 550) return;
           c.lastHit = time;
           if (m.data.to) {
             const target = members(c.room).find(x => x.id === m.data.to);
             if (!target || target === c || !rules.near(c.presence, { x: target.presence.px, z: target.presence.pz, y: target.presence.py || 0 }, 4.55 + (c.presence.bat || 0) * .5)) return;
+            if (!movement.clearLine({x:c.presence.px,z:c.presence.pz},{x:target.presence.px,z:target.presence.pz})) return;
+            if (target.stunUntil > time) return;
+            const dx = target.presence.px - c.presence.px, dz = target.presence.pz - c.presence.pz, distance = Math.hypot(dx,dz) || 1;
+            m.data = {to: target.id, vx: dx/distance*18, vz: dz/distance*18, duration: 1.5};
+            target.stunUntil = time + 1500;
             thefts.hit(target);
           }
         }
         for (const other of members(c.room)) {
-          if (m.data.to && other.id !== m.data.to) continue;
+          if (m.event !== 'hit' && m.data.to && other.id !== m.data.to) continue;
           send(other.ws, { type: 'event', room: c.room, event: m.event,
             peer: c.id, data: m.data, isMe: other === c });
         }
@@ -123,8 +140,8 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
     }
   }, 30000);
   heartbeat.unref();
-  wss.on('close', () => clearInterval(heartbeat));
-  return { server, wss, clients };
+  wss.on('close', () => { clearInterval(heartbeat); clearInterval(worldTimer); });
+  return { server, wss, clients, worlds };
 }
 module.exports = { createGameServer };
 if (require.main === module) {
