@@ -634,6 +634,13 @@ heist={r:+rv.key.slice(1),s,b,t0:now(),dur:2200};bar(true,`Stealing ${b.n}…`,f
 /* ---------- main loop ---------- */
 const P={x:-12,z:21,y:0,fl:0,vx:0,vz:0,ry:Math.PI/2,stun:0},me=person(0xff3d8b);{const l=label(myName);l.position.y=3.4;me.add(l)}S.add(me);me.position.set(P.x,0,P.z);
 const avs={},CT=new THREE.Vector3();C.position.set(-12,4,34);let last=now(),T=0,hudT=0,fcT=0,FC=[];
+// Match the local stride rate using distance actually rendered, not the remaining network gap.
+function remoteGait(a,distance,dt){
+a.ph=(a.ph||0)+distance*1.15;
+const speed=dt>0?distance/dt:0;
+a.runSpeed=(a.runSpeed||0)+(speed-(a.runSpeed||0))*(1-Math.exp(-12*dt));
+return Math.min(1,a.runSpeed/9)
+}
 function resize(){R.setSize(innerWidth,innerHeight);C.aspect=innerWidth/innerHeight;C.updateProjectionMatrix()}addEventListener('resize',resize);resize();
 function step(){const t=now(),dt=Math.min((t-last)/1000,.05);last=t;T+=dt;DT=dt;const TT=evt&&evt.k==="disco"?T*1.8:T;
 let ix=(K.KeyD||K.ArrowRight?1:0)-(K.KeyA||K.ArrowLeft?1:0)+J.x,iz=(K.KeyS||K.ArrowDown?1:0)-(K.KeyW||K.ArrowUp?1:0)+J.y;const l=Math.hypot(ix,iz);if(l>1){ix/=l;iz/=l}
@@ -657,7 +664,7 @@ else if(heist){const p=(t-heist.t0)/heist.dur;$('#pg').style.width=Math.min(p,1)
 carryTick(t,dt,TT);tradeTick(t);
 if(!raid&&t>nextRaid){nextRaid=t+(evt&&evt.k==="blood"?5000:12000)+Math.random()*(evt&&evt.k==="blood"?3000:8000);const o=mine.map((b,i)=>b?i:-1).filter(i=>i>=0&&i<8);if(o.length&&t>lockEnd&&!heist){raid={slot:o[Math.random()*o.length|0],end:t+5500,taps:0,bot:true,who:rivals[Math.random()*rivals.length|0].name};botAv=person(0xff9f1c,{nb:1});{const q=slotPos(own,raid.slot);botAv.position.set(q.x+2.6,0,q.z);botAv.rotation.y=-Math.PI/2;const lb=label("Thief!");lb.position.y=3.4;botAv.add(lb);S.add(botAv)}bar(true,`🚨 ${raid.who} is stealing ${mine[raid.slot].n}! Whack them or tap Defend 4×`,true);$('#pg').style.width='0'}}
 if(raid&&t>raid.end){const b=mine[raid.slot];mine[raid.slot]=null;if(raid.thief&&b)room.emit('rres',{to:raid.thief,ok:true,bi:B.indexOf(b)});toast(`${raid.who} stole your ${b.n}! 😭`);raid=null;bar(false);sync()}
-const seen={};peers.forEach(p=>{const id=p.peer;seen[id]=1;let a=avs[id];const tx=+p.presence.px||0,tz=+p.presence.pz||0;if(!a){a=avs[id]={g:person(0x3d9bff)};a.g.position.set(tx,0,tz);const lb=label(String(p.presence.nm||'Player').slice(0,20));lb.position.y=3.4;a.g.add(lb);S.add(a.g)}const dx=tx-a.g.position.x,dz=tz-a.g.position.z,kk=1-Math.exp(-10*dt),ds=Math.hypot(dx,dz);a.g.position.x+=dx*kk;a.g.position.z+=dz*kk;a.g.position.y+=((+p.presence.py||0)-a.g.position.y)*kk;if(ds>.15)a.g.rotation.y=ang(a.g.rotation.y,Math.atan2(dx,dz),kk);a.ph=(a.ph||0)+ds*1.15;walk(a.g,a.ph/10,Math.min(1,ds/dt/9));setCarry(a.g,Number.isInteger(p.presence.cb)?p.presence.cb:-1);carryPose(a.g,T)});
+const seen={};peers.forEach(p=>{const id=p.peer;seen[id]=1;let a=avs[id];const tx=+p.presence.px||0,tz=+p.presence.pz||0;if(!a){a=avs[id]={g:person(0x3d9bff)};a.g.position.set(tx,0,tz);const lb=label(String(p.presence.nm||'Player').slice(0,20));lb.position.y=3.4;a.g.add(lb);S.add(a.g)}const dx=tx-a.g.position.x,dz=tz-a.g.position.z,kk=1-Math.exp(-10*dt),ds=Math.hypot(dx,dz);a.g.position.x+=dx*kk;a.g.position.z+=dz*kk;a.g.position.y+=((+p.presence.py||0)-a.g.position.y)*kk;if(ds>.15)a.g.rotation.y=ang(a.g.rotation.y,Math.atan2(dx,dz),kk);const mv=remoteGait(a,ds*kk,dt);walk(a.g,a.ph/10,mv);setCarry(a.g,Number.isInteger(p.presence.cb)?p.presence.cb:-1);carryPose(a.g,T)});
 for(const id in avs)if(!seen[id]){S.remove(avs[id].g);delete avs[id]}
 if(botAv){if(!raid){S.remove(botAv);botAv=null}else{walk(botAv,T,0);botAv.userData.L[0].rotation.x=-1.2+Math.sin(T*8)*.3;botAv.userData.L[2].rotation.x=-1.2+Math.sin(T*8+1)*.3}}
 updSign();[[3,CFG.g3],[4,CFG.g4]].forEach(([q,sec])=>{const v=tickKey('g'+q+'_'+sec,sec);if(v){const l=B.map((b,i)=>b.t===q&&!b.mu?i:-1).filter(i=>i>=0);spawnBelt(l[(Math.imul(v,2654435761)>>>0)%l.length]);toast(`⭐ Guaranteed ${RN[q]} arrived!`)}});CFG.auto.forEach(a=>{if(tickKey('a'+a.i+'_'+a.sec,a.sec))spawnBelt(a.i)});const eb=$('#evt');if(evt&&t>evt.end){evt=null;toast('Event over!')}if(evt){const q=Math.ceil((evt.end-t)/1000);eb.hidden=false;eb.textContent=`${EVN[evt.k]} ${Math.floor(q/60)}:${String(q%60).padStart(2,'0')}`}else eb.hidden=true;
