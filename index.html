@@ -106,7 +106,7 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 <button class="btn" id="capply">Apply timers to everyone</button>
 <label>Auto-spawn the selected brainrot every (s)<input id="csec" type="number" value="30" min="3"></label>
 <div class="row"><button class="btn" id="cadd">Add auto-spawn</button><button class="btn" id="cclr">Clear auto-spawns</button></div><div id="alist"></div>
-<div class="row"><button class="btn" id="scash">$10K to everyone</button><button class="btn" id="sclr">Stop event</button><button class="btn" id="pc">Close</button></div></div>
+<div class="row"><button class="btn" id="scash">$10K to everyone</button><button class="btn" id="sclr">Stop event</button><button class="btn" id="ownerlogout">Sign out</button><button class="btn" id="pc">Close</button></div></div>
 <div id="toast" role="status"></div>
 <div id="help">Drag the right side to look around. WASD, or touch and hold the left side, to run. E buys, steals, or uses your base console and elevator. Stolen brainrots must be carried home. F or the bat slot (1) bonks thieves and chasers.</div>
 <script src="config.js"></script>
@@ -713,8 +713,11 @@ let connectionState='connecting';
 const netTxt=()=>{$('#net').textContent=connectionState==='online'&&lobby?'🌐 '+lbName(lobby)+' · Online':connectionState==='connected'?'🌐 Choose a lobby':connectionState==='offline'?'Solo · Server unavailable':connectionState==='reconnecting'?'🌐 Reconnecting…':'🌐 Connecting…'};
 addEventListener('brainrot:connection',e=>{connectionState=e.detail.state;netTxt();if(connectionState==='connected'&&hub&&!joining)enter(lobby||'main');if(mk==='lobby'&&document.activeElement!==$('#lcode'))modal('lobby')});
 addEventListener('brainrot:disconnect',()=>{resetNet();isAdmin=false;$('#adm').hidden=true;$('#panel').hidden=true});
-addEventListener('brainrot:auth',e=>{isAdmin=e.detail===true;$('#adm').hidden=!isAdmin;if(!isAdmin)$('#panel').hidden=true});
-addEventListener('keydown',async e=>{if(e.ctrlKey&&e.shiftKey&&e.code==='KeyA'){e.preventDefault();const token=prompt('Enter your server admin token');if(!token)return;try{toast(await brainrotAdminLogin(token)?'Admin enabled':'Incorrect admin token')}catch(error){toast(error.message)}}});
+let openOwnerPanel=new URLSearchParams(location.search).get('owner')==='1';
+function applyOwnerAccess(allowed){isAdmin=allowed===true;$('#adm').hidden=!isAdmin;if(!isAdmin)$('#panel').hidden=true;else if(openOwnerPanel){$('#panel').hidden=false;openOwnerPanel=false;const url=new URL(location.href);url.searchParams.delete('owner');history.replaceState(null,'',url.pathname+url.search+url.hash)}}
+addEventListener('brainrot:auth',e=>applyOwnerAccess(e.detail));
+$('#ownerlogout').onclick=async()=>{try{const r=await fetch('/api/owner/logout',{method:'POST'});if(!r.ok)throw Error('Could not sign out');location.replace('/')}catch(error){toast(error.message)}};
+addEventListener('keydown',e=>{if(e.ctrlKey&&e.shiftKey&&e.code==='KeyA'){e.preventDefault();location.assign('/owner')}});
 netTxt();
 function resetNet(){peers=[];myPeer=null;evt=null;OFFERS.length=0;for(const k in OUT)delete OUT[k];restoreEsc();TR.p='';if(heist&&heist.peer){heist=null;bar(false)}if(raid&&raid.thief){raid=null;bar(false)}if(carry&&carry.src.k==='peer')endCarry()}
 async function enter(code){if(!hub||joining)return false;joining=1;try{const r=await hub.join('hb-'+code),old=room;room=null;offs.forEach(f=>f());offs=[];if(old&&old!==r)old.leave().catch(()=>{});resetNet();room=r;lobby=code;
@@ -732,7 +735,7 @@ hub.onPeers(c=>{const L={};c.peers.forEach(p=>{if(p.kind!=='viewer'||!p.presence
 await enter('main');
 setInterval(()=>{if(!isAdmin||!room)return;if(evt)room.emit('evt',{k:evt.k,d:(evt.end-now())/1000,id:evt.id}).catch(()=>{});room.emit('evt',{k:'cfg',c:CFG}).catch(()=>{})},4000);
 setInterval(sync,2000);setInterval(()=>{room&&room.presence({px:+P.x.toFixed(1),pz:+P.z.toFixed(1),py:+P.y.toFixed(1)}).catch(()=>{})},100)})();
-(async()=>{try{const u=await claude.use('user');if(u&&(u.isOwner()||u.canEdit())){isAdmin=true;$('#adm').hidden=false}}catch(e){}})();
+(async()=>{try{const u=await claude.use('user');if(u)applyOwnerAccess(u.isOwner()||u.canEdit())}catch(e){}})();
 </script>
 
 </body></html>

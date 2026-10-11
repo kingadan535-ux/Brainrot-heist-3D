@@ -32,6 +32,10 @@ Render documentation:
 - https://render.com/docs/deploy-node-express-app
 - https://render.com/docs/websocket
 
+## Owner panel
+
+Open `/owner` and sign in with your private owner password. Set `OWNER_ACCESS_KEY` in Render to configure this password; an existing `ADMIN_TOKEN` is also accepted. Never place either secret in public frontend files or commit them. After successful sign-in the original panel opens, and its Admin button remains visible to that authenticated browser. Ordinary visitors have no admin access.
+
 ## What changed
 
 - Loads the multiplayer adapter before the original game.
@@ -42,11 +46,11 @@ Render documentation:
 - Relays trades and all 16 inventory slots, second-floor state, and player elevation.
 - Adds server heartbeat, a health endpoint, and bounded WebSocket payloads.
 - Serves only the game's public files rather than the whole repository.
-- Implements the documented Ctrl+Shift+A admin sign-in; admin access is cleared on disconnect.
+- Restores the owner panel through /owner sign-in (also opened by Ctrl+Shift+A). A signed, HttpOnly cookie remembers the owner for 7 days and restores access after reconnects. Sign out revokes the current browser session.
 
 ## Verification
 
-Four automated tests pass using real WebSocket clients against the actual server. They cover script loading and syntax, two-player presence, trades, room isolation, admin authorization, reconnect/rejoin, lobby counts, the eight-player limit, invalid codes, and same-origin URL handling. Browser visual QA could not run because the local browser automation runtime failed to start.
+Thirteen automated tests pass, using real WebSocket clients against the actual server and the actual remote animation and owner UI routines. They cover script loading and syntax, two-player presence, trades, room isolation, admin authorization, reconnect/rejoin, lobby counts, the eight-player limit, invalid codes, and same-origin URL handling. Browser visual QA could not run because the local browser automation runtime failed to start.
 
 The existing service is https://brainrot-heist-3d.onrender.com. After deployment, /healthz should return protocol 2. Verify two clients in a shared lobby before inviting players.
 

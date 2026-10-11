@@ -3,18 +3,22 @@ const http = require('http');
 const { WebSocketServer, WebSocket } = require('ws');
 const crypto = require('crypto');
 const path = require('path');
+const { createOwnerAuth } = require('./owner-auth');
 
-function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '' } = {}) {
+function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey = process.env.OWNER_ACCESS_KEY || '' } = {}) {
   const app = express();
   app.get('/healthz', (_req, res) => res.json({ ok: true, protocol: 2 }));
   for (const file of ['index.html', 'network.js', 'config.js']) {
     app.get(file === 'index.html' ? ['/', '/index.html'] : '/' + file,
       (_req, res) => res.sendFile(path.join(__dirname, file)));
   }
+  app.get('/owner', (_req, res) => res.set('Cache-Control', 'no-store').sendFile(path.join(__dirname, 'owner.html')));
   app.use('/vendor', express.static(path.join(__dirname, 'vendor')));
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16000 });
   const clients = new Map();
+  const ownerAuth = createOwnerAuth({ adminToken, ownerKey });
+  ownerAuth.routes(app, clients);
   const MAX = 8;
   const send = (ws, data) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
@@ -36,17 +40,18 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '' } = {}) {
       peer: p.id, kind: 'viewer', presence: p.presence, isMe: p === c
     })) });
   }
-  wss.on('connection', ws => {
-    const c = { ws, id: crypto.randomUUID(), room: null, presence: {}, admin: false, alive: true };
+  wss.on('connection', (ws, req) => {
+    const ownerSession = ownerAuth.sameOrigin(req) ? ownerAuth.read(req) : null;
+    const c = { ws, id: crypto.randomUUID(), room: null, presence: {}, admin: !!ownerSession, ownerSession, alive: true };
     clients.set(ws, c);
-    send(ws, { type: 'hello', peer: c.id, protocol: 2 });
+    send(ws, { type: 'hello', peer: c.id, protocol: 2, admin: c.admin });
     send(ws, { type: 'lobbies', counts: counts() });
     ws.on('pong', () => { c.alive = true; });
     ws.on('message', raw => {
       let m; try { m = JSON.parse(raw); } catch { return; }
       if (!m || typeof m !== 'object' || Array.isArray(m)) return;
       if (m.type === 'auth') {
-        c.admin = !!adminToken && typeof m.token === 'string' && m.token === adminToken;
+        c.admin = ownerAuth.matches(m.token);
         send(ws, { type: 'auth', ok: c.admin });
       } else if (m.type === 'join') {
         if (typeof m.room !== 'string' || !/^hb-[a-z0-9]{3,12}$/.test(m.room))
@@ -75,6 +80,7 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '' } = {}) {
       } else if (m.type === 'emit') {
         if (!c.room || !['raid', 'rres', 'hit', 'ret', 'evt', 'trade'].includes(m.event) ||
           !m.data || typeof m.data !== 'object' || Array.isArray(m.data)) return;
+        if (c.ownerSession && c.ownerSession.expires <= Date.now()) { c.admin = false; c.ownerSession = null; send(ws, { type: 'auth', ok: false }); }
         if (m.event === 'evt' && !c.admin) return;
         if (m.data.to !== undefined && typeof m.data.to !== 'string') return;
         for (const other of members(c.room)) {

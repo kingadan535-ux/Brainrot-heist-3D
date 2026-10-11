@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Owner sign-in · Brainrot Heist 3D</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100svh;display:grid;place-items:center;padding:24px;background:#8fd3ff;color:#2a1457;font:16px "Trebuchet MS",Verdana,sans-serif}.card{width:min(100%,430px);background:#fff1c9;border:3px solid #2a1457;border-radius:20px;padding:28px;box-shadow:7px 7px 0 #2a1457}h1{font-size:28px;margin:0 0 12px}p{line-height:1.5}label{display:block;font-weight:900;margin-top:24px}input{display:block;width:100%;margin:8px 0 16px;padding:12px;border:2px solid #2a1457;border-radius:10px;font:inherit}button{width:100%;padding:12px;border:3px solid #2a1457;border-radius:12px;font:900 16px "Trebuchet MS",sans-serif;background:#ff3d8b;color:#fff;cursor:pointer;box-shadow:3px 3px 0 #2a1457}button:disabled{opacity:.6}a{color:#2a1457;font-weight:700}#message{min-height:24px;color:#a51332}small{display:block;margin-top:16px;line-height:1.5}
+</style></head><body><main class="card"><h1>Owner sign-in</h1><p>Unlock your existing admin panel to run events, spawn brainrots, and manage your lobby.</p>
+<form id="login"><label for="password">Owner password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required autofocus><button id="submit" type="submit">Unlock admin panel</button></form>
+<p id="message" role="status" aria-live="polite"></p><a href="/">Back to the game</a><small>You’ll stay signed in on this browser for 7 days. Only sign in on a device you trust.</small></main>
+<script>
+document.querySelector('#login').addEventListener('submit',async event=>{
+ event.preventDefault();const button=document.querySelector('#submit'),input=document.querySelector('#password'),message=document.querySelector('#message');
+ button.disabled=true;message.textContent='Signing in…';
+ try{const response=await fetch('/api/owner/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:input.value})});const result=await response.json();if(!response.ok)throw Error(result.error||'Could not sign in. Please try again.');input.value='';location.replace('/?owner=1')}
+ catch(error){message.textContent=error.message;button.disabled=false}
+});
+</script></body></html>

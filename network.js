@@ -99,6 +99,8 @@
       if (m.type === 'hello') {
         clearTimeout(timeout);
         peer = m.peer; ready = true; retry = 0;
+        admin = m.admin === true;
+        window.dispatchEvent(new CustomEvent('brainrot:auth', { detail: admin }));
         const previous = current;
         for (const waiter of readyWaiters.splice(0)) { clearTimeout(waiter.timer); waiter.resolve(); }
         if (previous) join(previous.code, true).catch(error => {
