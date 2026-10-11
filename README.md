@@ -36,6 +36,15 @@ Render documentation:
 
 Open `/owner` and sign in with your private owner password. Set `OWNER_ACCESS_KEY` in Render to configure this password; an existing `ADMIN_TOKEN` is also accepted. Never place either secret in public frontend files or commit them. After successful sign-in the original panel opens, and its Admin button remains visible to that authenticated browser. Ordinary visitors have no admin access.
 
+## Shared bases, rebirth, and stealing
+
+- Rebirth clears inventory and restarts cash at $100, saved immediately. Finish active steals or trades before rebirthing.
+- The server assigns one of eight fixed base slots. Every player renders the same assignment; joining/leaving does not shuffle existing players.
+- A thief picks up a brainrot at its actual base location and must carry it to their own assigned base.
+- There is no remote Defend shortcut for player theft. Find the thief and bonk them within bat range to return the item automatically.
+- The original slot stays reserved during a steal. Disconnects return the item, and duplicate return requests cannot create copies.
+- Both players need to refresh after this update.
+
 ## What changed
 
 - Loads the multiplayer adapter before the original game.
@@ -50,10 +59,10 @@ Open `/owner` and sign in with your private owner password. Set `OWNER_ACCESS_KE
 
 ## Verification
 
-Thirteen automated tests pass, using real WebSocket clients against the actual server and the actual remote animation and owner UI routines. They cover script loading and syntax, two-player presence, trades, room isolation, admin authorization, reconnect/rejoin, lobby counts, the eight-player limit, invalid codes, and same-origin URL handling. Browser visual QA could not run because the local browser automation runtime failed to start.
+Twenty-one automated tests pass, using real WebSocket clients against the actual server and the actual remote animation and owner UI routines. They cover script loading and syntax, two-player presence, trades, room isolation, admin authorization, reconnect/rejoin, lobby counts, the eight-player limit, invalid codes, and same-origin URL handling. Browser visual QA could not run because the local browser automation runtime failed to start.
 
 The existing service is https://brainrot-heist-3d.onrender.com. After deployment, /healthz should return protocol 2. Verify two clients in a shared lobby before inviting players.
 
 ## Existing game limitations
 
-Progress remains stored in each browser's localStorage. A new domain has separate saved progress. The multiplayer server relays client-reported game state; it is not an authoritative economy. Trades and raids retain the original game's behavior and are not guaranteed to be atomic across network failures. Keep this in mind for public playtesting. Accounts and persistent server saves would be a separate feature.
+Progress remains stored in each browser's localStorage. A new domain has separate saved progress. The multiplayer server relays client-reported game state; it is not an authoritative economy. In-flight steals, deposits, and bonk returns are coordinated by the server, but purchases, saved inventory, and cash are still client-reported. Trades retain their previous behavior and are not guaranteed to be atomic across network failures. Keep this in mind for public playtesting. Accounts and persistent server saves would be a separate feature.

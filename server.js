@@ -4,11 +4,13 @@ const { WebSocketServer, WebSocket } = require('ws');
 const crypto = require('crypto');
 const path = require('path');
 const { createOwnerAuth } = require('./owner-auth');
+const rules = require('./game-rules');
+const { createThefts } = require('./thefts');
 
 function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey = process.env.OWNER_ACCESS_KEY || '' } = {}) {
   const app = express();
   app.get('/healthz', (_req, res) => res.json({ ok: true, protocol: 2 }));
-  for (const file of ['index.html', 'network.js', 'config.js']) {
+  for (const file of ['index.html', 'network.js', 'config.js', 'game-rules.js']) {
     app.get(file === 'index.html' ? ['/', '/index.html'] : '/' + file,
       (_req, res) => res.sendFile(path.join(__dirname, file)));
   }
@@ -37,12 +39,13 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
     if (!room) return;
     const list = members(room);
     for (const c of list) send(c.ws, { type: 'peers', room, peers: list.map(p => ({
-      peer: p.id, kind: 'viewer', presence: p.presence, isMe: p === c
+      peer: p.id, baseSlot: p.baseSlot, kind: 'viewer', presence: p.presence, isMe: p === c
     })) });
   }
+  const thefts = createThefts({ members, roster, event: (c, event, data) => send(c.ws, { type: 'event', room: c.room, event, peer: 'server', isMe: false, data }) });
   wss.on('connection', (ws, req) => {
     const ownerSession = ownerAuth.sameOrigin(req) ? ownerAuth.read(req) : null;
-    const c = { ws, id: crypto.randomUUID(), room: null, presence: {}, admin: !!ownerSession, ownerSession, alive: true };
+    const c = { ws, id: crypto.randomUUID(), room: null, baseSlot: null, presence: {}, admin: !!ownerSession, ownerSession, alive: true };
     clients.set(ws, c);
     send(ws, { type: 'hello', peer: c.id, protocol: 2, admin: c.admin });
     send(ws, { type: 'lobbies', counts: counts() });
@@ -59,12 +62,18 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
         if (c.room !== m.room && members(m.room).length >= MAX)
           return send(ws, { type: 'join', room: m.room, ok: false, error: 'Lobby full' });
         const old = c.room;
-        c.room = m.room; c.presence = {};
-        send(ws, { type: 'join', room: c.room, ok: true });
+        if (old !== m.room) {
+          thefts.release(c);
+          const occupied = new Set(members(m.room).map(x => x.baseSlot));
+          c.baseSlot = rules.bases.findIndex((_base, index) => !occupied.has(index));
+          c.presence = {}; c.inventoryPatches = new Map();
+        }
+        c.room = m.room;
+        send(ws, { type: 'join', room: c.room, ok: true, baseSlot: c.baseSlot });
         if (old !== c.room) roster(old);
         roster(c.room); lobbies();
       } else if (m.type === 'leave') {
-        const old = c.room; c.room = null; c.presence = {};
+        const old = c.room; thefts.release(c); c.room = null; c.baseSlot = null; c.presence = {}; c.inventoryPatches = new Map();
         roster(old); lobbies();
       } else if (m.type === 'presence') {
         if (!c.room || !m.data || typeof m.data !== 'object' || Array.isArray(m.data)) return;
@@ -75,14 +84,28 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
           if (Number.isFinite(d[k])) safe[k] = Math.max(-1000000, Math.min(1000000, d[k]));
         if (typeof d.lk === 'boolean') safe.lk = d.lk;
         if (d.f2 === 0 || d.f2 === 1 || typeof d.f2 === 'boolean') safe.f2 = d.f2 ? 1 : 0;
+        if (Number.isInteger(d.bat)) safe.bat = Math.max(0, Math.min(4, d.bat));
+        thefts.applyPresence(c, safe);
         c.presence = { ...c.presence, ...safe };
         roster(c.room);
       } else if (m.type === 'emit') {
-        if (!c.room || !['raid', 'rres', 'hit', 'ret', 'evt', 'trade'].includes(m.event) ||
+        if (!c.room || !['steal', 'bank', 'hit', 'evt', 'trade'].includes(m.event) ||
           !m.data || typeof m.data !== 'object' || Array.isArray(m.data)) return;
         if (c.ownerSession && c.ownerSession.expires <= Date.now()) { c.admin = false; c.ownerSession = null; send(ws, { type: 'auth', ok: false }); }
         if (m.event === 'evt' && !c.admin) return;
-        if (m.data.to !== undefined && typeof m.data.to !== 'string') return;
+        if (m.data.to !== undefined && m.data.to !== null && typeof m.data.to !== 'string') return;
+        if (m.event === 'steal') { thefts.steal(c, m.data); return; }
+        if (m.event === 'bank') { thefts.bank(c, m.data); return; }
+        if (m.event === 'hit') {
+          const time = Date.now();
+          if (time - (c.lastHit || 0) < 550) return;
+          c.lastHit = time;
+          if (m.data.to) {
+            const target = members(c.room).find(x => x.id === m.data.to);
+            if (!target || target === c || !rules.near(c.presence, { x: target.presence.px, z: target.presence.pz, y: target.presence.py || 0 }, 4.55 + (c.presence.bat || 0) * .5)) return;
+            thefts.hit(target);
+          }
+        }
         for (const other of members(c.room)) {
           if (m.data.to && other.id !== m.data.to) continue;
           send(other.ws, { type: 'event', room: c.room, event: m.event,
@@ -90,7 +113,7 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
         }
       }
     });
-    ws.on('close', () => { const old = c.room; clients.delete(ws); roster(old); lobbies(); });
+    ws.on('close', () => { const old = c.room; thefts.release(c); clients.delete(ws); roster(old); lobbies(); });
     ws.on('error', () => {});
   });
   const heartbeat = setInterval(() => {
