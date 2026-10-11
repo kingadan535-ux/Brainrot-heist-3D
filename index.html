@@ -453,7 +453,7 @@ bcn.position.set(OWN.x,12,OWN.z);P.x=OWN.x+own.o*(HW+3);P.z=OWN.z;P.y=P.fl=P.vx=
 }
 let pk='';function updPed(){const ok=reb>=3,k=f2+'|'+ok;if(k===pk)return;pk=k;if(own.pl)own.pedG.remove(own.pl);const l=f2?label('ELEVATOR','','Go up / down','#4dd0ff',1.2):label('BUILD 2ND FLOOR',fmt(F2C),ok?'Rebirth 3 unlocked':'Needs Rebirth 3',ok?'#4dff8a':'#ff6b6b',1.2);l.position.y=3.8;own.pedG.add(l);own.pl=l;own.btn.material=mat(f2?0x39b0ff:ok?0x3ddc84:0xe5173f)}
 const slotPos=(P,k)=>{const l=slotLoc(k);return{x:P.g.position.x+l.x,y:l.y,z:P.g.position.z+l.z}};
-function setSlot(P,k,b){const o=P.slots[k];if(o.cur===b)return;if(o.g)S.remove(o.g);o.cur=b;o.g=null;if(!b)return;const g=build(B.indexOf(b)),q=slotPos(P,k);g.position.set(q.x,q.y+.48,q.z);g.rotation.y=P.o*Math.PI/2;const l=label(b.n,fmt(b.i)+'/s',RN[b.t],RC[b.t]);l.position.y=b.t>3?4.6:3.8;g.add(l);S.add(g);o.g=g}
+function setSlot(P,k,b){const o=P.slots[k];if(o.cur===b)return;if(o.g)S.remove(o.g);o.cur=b;o.g=null;if(!b)return;const g=build(B.indexOf(b)),q=slotPos(P,k);g.position.set(q.x,q.y+.48,q.z);g.rotation.y=P.o*Math.PI/2;const l=label(b.n,fmt(b.i)+'/s',RN[b.t],RC[b.t]);l.position.y=(g.userData.height||3.2)+.65;g.add(l);S.add(g);o.g=g}
 /* ---------- game state ---------- */
 let carry=null,chaser=null,f2=0,cash=100,stolen=0,mine=Array(16).fill(null),lockEnd=0,lockReady=0,heist=null,raid=null,belt=[],botAv=null,DT=0,hitCd=0,evt=null,isAdmin=false,coins=[],nextCoin=0,act=null,nextSpawn=0,nextRaid=Infinity,nextStock=now()+8000;
 const pick=mt=>{const w=B.map(b=>b.t<=mt&&!b.mu?TW[b.t]/CNT[b.t]:0);let r=Math.random()*w.reduce((a,b)=>a+b),i=0;for(;i<w.length-1;i++){r-=w[i];if(r<=0)break}return i};
@@ -605,7 +605,7 @@ sync();save()
 }
 function requestSpawn(i){if(room)room.emit('evt',{k:'spawn',i}).catch(()=>toast('Connect to a lobby first'));else spawnBelt(i)}
 const SQ=[];function spawnBelt(i){if(B[i]&&SQ.length<8)SQ.push(i)}
-function spawnNow(i){if(B[i].t>=3)rareFx(i);if(B[i].mu)mutSfx(B[i]);const g=build(i),e=B[i],lb=label(e.n,fmt(e.i)+'/s',RN[e.t],RC[e.t],1,fmt(e.p));lb.position.y=e.t>3?4.6:3.8;g.add(lb);g.position.set(0,.05,ZS);S.add(g);belt.push({i,g,z:ZS})}
+function spawnNow(i){if(B[i].t>=3)rareFx(i);if(B[i].mu)mutSfx(B[i]);const g=build(i),e=B[i],lb=label(e.n,fmt(e.i)+'/s',RN[e.t],RC[e.t],1,fmt(e.p));lb.position.y=(g.userData.height||3.2)+.65;g.add(lb);g.position.set(0,.05,ZS);S.add(g);belt.push({i,g,z:ZS})}
 function startEvt(k,d,id){if(evt&&evt.id===id){evt.end=now()+d*1000;return}evt={k,id,end:now()+d*1000};toast(EVN[k]+' started!');evStart(k)}
 function adminEvt(k){const id=Math.random().toString(36).slice(2,8),d=+$('#adur').value;startEvt(k,d,id);room&&room.emit('evt',{k,d,id}).catch(()=>{})}
 function onEvt(m){const d=m.data||{};if(m.isMe)return;if(d.k==='cfg'){applyCfg(d.c);renderAuto()}else if(d.k==='spawn'){const i=d.i|0;if(B[i])spawnBelt(i)}else if(d.k==='cash'){cash+=Math.min(+d.v||0,1e6);toast('💸 Free cash from the owner!')}else if(d.k==='stop')evt=null;else if(EVN[d.k])startEvt(d.k,Math.min(+d.d||30,300),String(d.id))}
