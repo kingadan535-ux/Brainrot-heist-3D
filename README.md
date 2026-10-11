@@ -1,6 +1,6 @@
 # Brainrot Heist 3D — fixed multiplayer build
 
-This is the complete uploaded game, with its original gameplay and visual design retained. The networking adapter is now loaded before the game starts.
+This is the complete uploaded game, with its original gameplay and UI retained and upgraded collectible artwork. The networking adapter is now loaded before the game starts.
 
 ## Run locally
 
@@ -26,7 +26,7 @@ Update the repository files with this build. Use your existing Node web service 
 
 When the game and server are on the same Render address, leave `config.js` empty as supplied. The client automatically uses `wss://<your-service>/ws` on HTTPS. Render provides the listening port through `PORT`; the server binds to `0.0.0.0`.
 
-When the game is on a separate static host, deploy only `index.html`, `network.js`, `config.js`, `game-rules.js`, `movement.js`, and `delivery-route.js` there. Set `window.BRAINROT_SERVER_URL` in that host's `config.js` to your actual Render HTTPS origin or full secure WebSocket URL ending in `/ws`. Deploy the updated `server.js` on Render as well: a frontend-only update cannot enable trades and second-floor synchronization on the old backend.
+When the game is on a separate static host, deploy only `index.html`, `network.js`, `config.js`, `game-rules.js`, `movement.js`, `delivery-route.js`, and `brainrot-art.js` there. Set `window.BRAINROT_SERVER_URL` in that host's `config.js` to your actual Render HTTPS origin or full secure WebSocket URL ending in `/ws`. Deploy the updated `server.js` on Render as well: a frontend-only update cannot enable trades and second-floor synchronization on the old backend.
 
 Render documentation:
 - https://render.com/docs/deploy-node-express-app
@@ -76,3 +76,9 @@ Space jumps; Shift sprints. Touch players have Jump and Sprint buttons. Carrying
 ## Touch recovery
 
 Movement and camera touches are tracked separately. Global pointer release/cancel, lost capture, and touch identifiers clear the joystick even when its original release is missed. Blur, hidden pages, page exits, orientation changes, and opening a modal reset controls. Real touch-browser tests cover releasing the joystick while holding a camera finger, cancelling a touch, starting again, and toggling sprint.
+
+## Detailed brainrot artwork
+
+All 146 base brainrots use the new sculpted renderer, with 18 design families, deterministic character-specific proportions and palettes, detailed faces, and themed accessories. High rarities add elemental bodies, crowns, crystals, articulated wings, tentacles, cloaks, reactor armor, orbiting gems, and animated effects. Walking, idle motion, wingbeats, steam, flames, and tentacle movement follow each design. All 12 mutation styles remain supported; item IDs, prices, income, saves, and gameplay are unchanged.
+
+Static meshes are batched and cached, while each model keeps its own animated joints. The mobile profile reduces geometry detail. Browser verification rendered all 146 base characters at both desktop and mobile settings (292 configurations), checked finite bounds and animated rigs, rendered all 12 mutations, and checked populated bases and carrying. The mobile profile was tested in desktop Edge, not on a physical phone. The existing 37 gameplay tests also pass.
