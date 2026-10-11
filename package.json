@@ -1,1 +1,16 @@
-{"name":"brainrot-heist-3d-online","version":"1.0.0","private":true,"scripts":{"start":"node server.js"},"dependencies":{"express":"^4.21.2","ws":"^8.18.0"},"engines":{"node":">=18"}}
+{
+  "name": "brainrot-heist-3d-online",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

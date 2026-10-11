@@ -1,23 +1,55 @@
-# Brainrot Heist 3D Online
+# Brainrot Heist 3D — fixed multiplayer build
 
-Original game kept in `index.html`. `network.js` replaces the Claude room integration with a WebSocket-compatible API. `server.js` hosts the game and relays multiplayer events.
+This is the complete uploaded game, with its original gameplay and visual design retained. The networking adapter is now loaded before the game starts.
 
-## Run
+## Run locally
 
-1. Install Node.js 18+.
-2. Run `npm install`.
-3. Set an admin secret with `ADMIN_TOKEN=your-long-random-secret` (set it in your host's environment variables, not in browser code).
-4. Run `npm start`.
-5. Open http://localhost:3000 in two browser windows to test multiplayer.
+Use Node.js 22 or newer, then run:
 
-## Deploy
+```
+npm ci
+npm test
+npm start
+```
 
-Deploy the full folder to a Node.js hosting provider that supports persistent WebSockets (e.g. Render web service or Railway). Build: `npm install`; start: `npm start`. Set `ADMIN_TOKEN` in the host's environment settings. Use the public HTTPS URL. Do not use static-only Netlify Drop for this multiplayer version.
+Open http://localhost:3000 in two separate browser windows. Open Lobby to choose a public lobby or create and share a private code.
 
-## Admin
+## Deploy on your existing Render service
 
-Press Ctrl+Shift+A in the game and enter your server's ADMIN_TOKEN. On touch devices, use a keyboard or add a dedicated admin-login button before use. Never publish your admin token.
+Update the repository files with this build. Use your existing Node web service connected to kingadan535-ux/Brainrot-heist-3D:
 
-## Limitations / security
+- Build command: `npm ci`
+- Start command: `npm start`
+- Health check path: `/healthz`
+- Keep a single running instance: lobby membership is held in server memory.
+- Optional `ADMIN_TOKEN`: choose a long secret in Render's environment settings; never put it in game code.
 
-Up to 8 connections per lobby. Player position, cash, and brainrot inventory are still client-reported, and saves are still in browser localStorage. The server relays events but does not authoritatively validate ownership, cash, raids, or purchases. This is a functional multiplayer conversion for playtesting, not a cheat-resistant production economy. Admin events are token-gated. To support durable cross-device accounts, secure stealing, and true server-calculated offline income, add authentication, a database, and server-authoritative game state.
+When the game and server are on the same Render address, leave `config.js` empty as supplied. The client automatically uses `wss://<your-service>/ws` on HTTPS. Render provides the listening port through `PORT`; the server binds to `0.0.0.0`.
+
+When the game is on a separate static host, deploy only `index.html`, `network.js`, and `config.js` there. Set `window.BRAINROT_SERVER_URL` in that host's `config.js` to your actual Render HTTPS origin or full secure WebSocket URL ending in `/ws`. Deploy the updated `server.js` on Render as well: a frontend-only update cannot enable trades and second-floor synchronization on the old backend.
+
+Render documentation:
+- https://render.com/docs/deploy-node-express-app
+- https://render.com/docs/websocket
+
+## What changed
+
+- Loads the multiplayer adapter before the original game.
+- Supports a separate Render server and the `/ws` protocol.
+- Shows connecting, online, and reconnecting status.
+- Reconnects and rejoins the selected lobby, restoring presence.
+- Handles initial lobby counts and rosters arriving immediately after a join.
+- Relays trades and all 16 inventory slots, second-floor state, and player elevation.
+- Adds server heartbeat, a health endpoint, and bounded WebSocket payloads.
+- Serves only the game's public files rather than the whole repository.
+- Implements the documented Ctrl+Shift+A admin sign-in; admin access is cleared on disconnect.
+
+## Verification
+
+Four automated tests pass using real WebSocket clients against the actual server. They cover script loading and syntax, two-player presence, trades, room isolation, admin authorization, reconnect/rejoin, lobby counts, the eight-player limit, invalid codes, and same-origin URL handling. Browser visual QA could not run because the local browser automation runtime failed to start.
+
+The existing service is https://brainrot-heist-3d.onrender.com. After deployment, /healthz should return protocol 2. Verify two clients in a shared lobby before inviting players.
+
+## Existing game limitations
+
+Progress remains stored in each browser's localStorage. A new domain has separate saved progress. The multiplayer server relays client-reported game state; it is not an authoritative economy. Trades and raids retain the original game's behavior and are not guaranteed to be atomic across network failures. Keep this in mind for public playtesting. Accounts and persistent server saves would be a separate feature.

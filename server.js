@@ -1,22 +1,104 @@
-const express=require('express');
-const http=require('http');
-const {WebSocketServer,WebSocket}=require('ws');
-const crypto=require('crypto');
-const app=express();app.use(express.static(__dirname,{index:'index.html'}));
-const server=http.createServer(app);const wss=new WebSocketServer({server,path:'/ws'});
-const clients=new Map();const MAX=8;
-const send=(ws,obj)=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(obj))};
-const validRoom=s=>typeof s==='string'&&/^hb-[a-z0-9]{3,12}$/.test(s);
-const members=room=>[...clients.values()].filter(c=>c.room===room);
-function roster(room){return members(room).map(c=>({peer:c.id,kind:'viewer',presence:c.presence,isMe:false}))}
-function update(room){if(!room)return;const list=roster(room);for(const c of members(room))send(c.ws,{type:'peers',room,peers:list.map(p=>({...p,isMe:p.peer===c.id}))});for(const c of clients.values())send(c.ws,{type:'lobbies',counts:Object.fromEntries([...new Set([...clients.values()].map(x=>x.room).filter(Boolean))].map(r=>[r.slice(3),members(r).length]))})}
-wss.on('connection',ws=>{const c={ws,id:crypto.randomUUID(),room:null,presence:{},admin:false};clients.set(ws,c);send(ws,{type:'hello',peer:c.id});update(null);
-ws.on('message',raw=>{if(raw.length>16000)return;let m;try{m=JSON.parse(raw)}catch{return}if(!m||typeof m!=='object')return;
-if(m.type==='auth'){c.admin=!!process.env.ADMIN_TOKEN&&typeof m.token==='string'&&m.token===process.env.ADMIN_TOKEN;send(ws,{type:'auth',ok:c.admin});return}
-if(m.type==='join'){if(!validRoom(m.room))return send(ws,{type:'join',room:m.room,ok:false,error:'Invalid lobby'});if(c.room!==m.room&&members(m.room).length>=MAX)return send(ws,{type:'join',room:m.room,ok:false,error:'Lobby full'});const old=c.room;c.room=m.room;c.presence={};send(ws,{type:'join',room:c.room,ok:true});update(old);update(c.room);return}
-if(m.type==='leave'){const old=c.room;c.room=null;c.presence={};update(old);return}
-if(m.type==='presence'){if(!c.room||!m.data||typeof m.data!=='object')return;const d=m.data;const safe={};if(typeof d.nm==='string')safe.nm=d.nm.slice(0,20);if(Array.isArray(d.s))safe.s=d.s.slice(0,8).map(x=>Number.isInteger(x)&&x>=-1&&x<1000?x:-1);for(const k of ['px','pz','cash','cb'])if(Number.isFinite(d[k]))safe[k]=Math.max(-1000000,Math.min(1000000,d[k]));if(typeof d.lk==='boolean')safe.lk=d.lk;c.presence={...c.presence,...safe};update(c.room);return}
-if(m.type==='emit'){if(!c.room||!['raid','rres','hit','ret','evt'].includes(m.event)||!m.data||typeof m.data!=='object')return;if(m.event==='evt'&&!c.admin)return;const d=m.data;for(const other of members(c.room)){if(d.to&&other.id!==d.to)continue;send(other.ws,{type:'event',room:c.room,event:m.event,peer:c.id,data:d,isMe:other.id===c.id})}return}
-});ws.on('close',()=>{const old=c.room;clients.delete(ws);update(old)});ws.on('error',()=>{});
-});
-const port=process.env.PORT||3000;server.listen(port,()=>console.log('Brainrot Heist running on port '+port));
+const express = require('express');
+const http = require('http');
+const { WebSocketServer, WebSocket } = require('ws');
+const crypto = require('crypto');
+const path = require('path');
+
+function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '' } = {}) {
+  const app = express();
+  app.get('/healthz', (_req, res) => res.json({ ok: true, protocol: 2 }));
+  for (const file of ['index.html', 'network.js', 'config.js']) {
+    app.get(file === 'index.html' ? ['/', '/index.html'] : '/' + file,
+      (_req, res) => res.sendFile(path.join(__dirname, file)));
+  }
+  app.use('/vendor', express.static(path.join(__dirname, 'vendor')));
+  const server = http.createServer(app);
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16000 });
+  const clients = new Map();
+  const MAX = 8;
+  const send = (ws, data) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+  };
+  const members = room => [...clients.values()].filter(c => c.room === room);
+  const counts = () => {
+    const result = {};
+    for (const c of clients.values()) if (c.room) result[c.room.slice(3)] = (result[c.room.slice(3)] || 0) + 1;
+    return result;
+  };
+  function lobbies() {
+    const data = { type: 'lobbies', counts: counts() };
+    for (const c of clients.values()) send(c.ws, data);
+  }
+  function roster(room) {
+    if (!room) return;
+    const list = members(room);
+    for (const c of list) send(c.ws, { type: 'peers', room, peers: list.map(p => ({
+      peer: p.id, kind: 'viewer', presence: p.presence, isMe: p === c
+    })) });
+  }
+  wss.on('connection', ws => {
+    const c = { ws, id: crypto.randomUUID(), room: null, presence: {}, admin: false, alive: true };
+    clients.set(ws, c);
+    send(ws, { type: 'hello', peer: c.id, protocol: 2 });
+    send(ws, { type: 'lobbies', counts: counts() });
+    ws.on('pong', () => { c.alive = true; });
+    ws.on('message', raw => {
+      let m; try { m = JSON.parse(raw); } catch { return; }
+      if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+      if (m.type === 'auth') {
+        c.admin = !!adminToken && typeof m.token === 'string' && m.token === adminToken;
+        send(ws, { type: 'auth', ok: c.admin });
+      } else if (m.type === 'join') {
+        if (typeof m.room !== 'string' || !/^hb-[a-z0-9]{3,12}$/.test(m.room))
+          return send(ws, { type: 'join', room: m.room, ok: false, error: 'Invalid lobby' });
+        if (c.room !== m.room && members(m.room).length >= MAX)
+          return send(ws, { type: 'join', room: m.room, ok: false, error: 'Lobby full' });
+        const old = c.room;
+        c.room = m.room; c.presence = {};
+        send(ws, { type: 'join', room: c.room, ok: true });
+        if (old !== c.room) roster(old);
+        roster(c.room); lobbies();
+      } else if (m.type === 'leave') {
+        const old = c.room; c.room = null; c.presence = {};
+        roster(old); lobbies();
+      } else if (m.type === 'presence') {
+        if (!c.room || !m.data || typeof m.data !== 'object' || Array.isArray(m.data)) return;
+        const d = m.data, safe = {};
+        if (typeof d.nm === 'string') safe.nm = d.nm.slice(0, 20);
+        if (Array.isArray(d.s)) safe.s = d.s.slice(0, 16).map(x => Number.isInteger(x) && x >= -1 && x < 1000 ? x : -1);
+        for (const k of ['px', 'pz', 'py', 'cash', 'cb'])
+          if (Number.isFinite(d[k])) safe[k] = Math.max(-1000000, Math.min(1000000, d[k]));
+        if (typeof d.lk === 'boolean') safe.lk = d.lk;
+        if (d.f2 === 0 || d.f2 === 1 || typeof d.f2 === 'boolean') safe.f2 = d.f2 ? 1 : 0;
+        c.presence = { ...c.presence, ...safe };
+        roster(c.room);
+      } else if (m.type === 'emit') {
+        if (!c.room || !['raid', 'rres', 'hit', 'ret', 'evt', 'trade'].includes(m.event) ||
+          !m.data || typeof m.data !== 'object' || Array.isArray(m.data)) return;
+        if (m.event === 'evt' && !c.admin) return;
+        if (m.data.to !== undefined && typeof m.data.to !== 'string') return;
+        for (const other of members(c.room)) {
+          if (m.data.to && other.id !== m.data.to) continue;
+          send(other.ws, { type: 'event', room: c.room, event: m.event,
+            peer: c.id, data: m.data, isMe: other === c });
+        }
+      }
+    });
+    ws.on('close', () => { const old = c.room; clients.delete(ws); roster(old); lobbies(); });
+    ws.on('error', () => {});
+  });
+  const heartbeat = setInterval(() => {
+    for (const c of clients.values()) {
+      if (!c.alive) { c.ws.terminate(); continue; }
+      c.alive = false; c.ws.ping();
+    }
+  }, 30000);
+  heartbeat.unref();
+  wss.on('close', () => clearInterval(heartbeat));
+  return { server, wss, clients };
+}
+module.exports = { createGameServer };
+if (require.main === module) {
+  const { server } = createGameServer();
+  server.listen(process.env.PORT || 3000, '0.0.0.0', () => console.log('Brainrot Heist running on port ' + server.address().port));
+}
