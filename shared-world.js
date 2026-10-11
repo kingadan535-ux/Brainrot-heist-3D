@@ -17,7 +17,7 @@ function createWorlds({members,event,roster,thefts,clock=Date.now,random=Math.ra
   const periodic=(key,sec,fn)=>{const n=Math.floor(time/1000/sec);if(w.timers[key]!==undefined&&w.timers[key]!==n)fn();w.timers[key]=n};
   for(const tier of [3,4])periodic('g'+tier+'_'+w.cfg['g'+tier],w.cfg['g'+tier],()=>{if(w.queue.length<32)w.queue.push(pick(tier))});
   for(const a of w.cfg.auto)periodic('a'+a.i+'_'+a.sec,a.sec,()=>{if(w.queue.length<32)w.queue.push(a.i)});
-  if(w.queue.length&&w.items.filter(o=>!o.buyer).every(o=>o.z>-88.2))w.items.push({id:crypto.randomUUID(),i:w.queue.shift(),x:0,y:0,z:-95.2,revision:0});
+  if(w.queue.length&&w.items.filter(o=>!o.buyer).every(o=>o.z>-88.2))w.items.push({id:crypto.randomUUID(),i:w.queue.shift(),x:0,y:0,z:-95.2,revision:0,spawnAt:time});
   if(time-w.sent>=400){w.sent=time;broadcast(room)}
  }}
  function admin(c,d){const w=get(c.room);if(d.k==='spawn'){if(valid(d.i)&&w.queue.length<32)w.queue.push(d.i);return true}

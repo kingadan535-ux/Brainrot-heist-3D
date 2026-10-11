@@ -26,7 +26,7 @@ Update the repository files with this build. Use your existing Node web service 
 
 When the game and server are on the same Render address, leave `config.js` empty as supplied. The client automatically uses `wss://<your-service>/ws` on HTTPS. Render provides the listening port through `PORT`; the server binds to `0.0.0.0`.
 
-When the game is on a separate static host, deploy only `index.html`, `network.js`, `config.js`, `game-rules.js`, `movement.js`, `delivery-route.js`, and `brainrot-art.js` there. Set `window.BRAINROT_SERVER_URL` in that host's `config.js` to your actual Render HTTPS origin or full secure WebSocket URL ending in `/ws`. Deploy the updated `server.js` on Render as well: a frontend-only update cannot enable trades and second-floor synchronization on the old backend.
+When the game is on a separate static host, deploy only `index.html`, `network.js`, `config.js`, `game-rules.js`, `movement.js`, `delivery-route.js`, `brainrot-art.js`, and `brainrot-vfx.js` there. Set `window.BRAINROT_SERVER_URL` in that host's `config.js` to your actual Render HTTPS origin or full secure WebSocket URL ending in `/ws`. Deploy the updated `server.js` on Render as well: a frontend-only update cannot enable trades and second-floor synchronization on the old backend.
 
 Render documentation:
 - https://render.com/docs/deploy-node-express-app
@@ -59,7 +59,7 @@ Open `/owner` and sign in with your private owner password. Set `OWNER_ACCESS_KE
 
 ## Verification
 
-Thirty-seven automated tests pass, using real WebSocket clients against the actual server and the actual remote animation and owner UI routines. They cover script loading and syntax, two-player presence, trades, room isolation, admin authorization, reconnect/rejoin, lobby counts, the eight-player limit, invalid codes, and same-origin URL handling. Two real browser sessions additionally verified matching belt items, high-index admin mutations, carrying restrictions, bonk returns and visible ragdolls, Space jumping, and contested purchases. Desktop and touch layouts were visually checked.
+Forty-three automated tests pass, using real WebSocket clients against the actual server and the actual remote animation and owner UI routines. They cover script loading and syntax, two-player presence, trades, room isolation, admin authorization, reconnect/rejoin, lobby counts, the eight-player limit, invalid codes, and same-origin URL handling. Two real browser sessions additionally verified matching belt items, high-index admin mutations, carrying restrictions, bonk returns and visible ragdolls, Space jumping, and contested purchases. Desktop and touch layouts were visually checked.
 
 The existing service is https://brainrot-heist-3d.onrender.com. After deployment, /healthz should return protocol 2. Verify two clients in a shared lobby before inviting players.
 
@@ -84,3 +84,15 @@ Every one of the 146 base characters now has an explicit body and signature desi
 Size increases with rarity. In the sampled animation checks, Secret creatures average approximately 4.8 world units high versus 2.2 for Common characters. Creature names track model height. Species have different locomotion and idle behavior: heavy steps, frog hops, serpentine waves, wingbeats, tentacle motion, rolling, hovering, head movement, and animated accessories. Each instance owns its animated joints; static geometry is shared and batched. All 12 mutations preserve each creature's identity, and original IDs, economy, and saves stay compatible.
 
 Verification: all 37 gameplay tests pass. Real Edge rendering checked 292 desktop/mobile base-model configurations, all 1,752 mutation identity mappings, representative rendered mutations, populated bases, and carrying. Animated vertex samples across 24 poses per configuration stayed under 6.12 units high and 5.74 units wide, within the base's seven-unit floors and 6.2-unit slot spacing. All 146 body/signature pairs are distinct, and every rig animates without affecting another instance. Mobile geometry averaged about 4,616 triangles/model; this profile was tested in desktop Edge, not on a physical phone.
+
+## Layered effects and mutations
+
+Rarity, character identity, mutation, and entrances now render as separate cosmetic layers. All 58 Mythic, Brainrot God, and Secret characters have named effect profiles. Common models stay quiet; Rare and Epic effects are restrained; higher tiers add emissive rims, procedural aura waves, glyphs, instanced orbiting accessories, shader particles, trails, and themed structures. The current roster has no OG tier.
+
+All 12 mutations retain the original character effects and add their own materials and visible accessories, including coins, musical notes, money bags, ice armor, lava cracks and footprints, lightning, ringed planets, toxic symbols, sweets, and animated rainbow color. Static particle geometry is shared, trail buffers are pooled, and per-model resources are disposed on removal. Distance and visible-character budgets reduce effects in crowded scenes.
+
+Use the new Graphics button for Automatic, Low, Medium, or High effects, plus reduced flashes and entrances. Preferences are stored separately from game saves. Automatic chooses a conservative device default and can reduce quality when initial frame times are slow. Low preserves mutation materials and signature accessories. At most two nearby, shadow-free effect lights are enabled on High; glow is local to effects, with no costly fullscreen bloom pass.
+
+The only world-state addition is a server spawn timestamp. Existing item IDs supply deterministic seeds; clients use the timestamp for entrances and suppress duplicate or old presentations. Late joins render ongoing effects without replaying entrances. Secret arrival notices are local presentations of the same lobby event. Effects never lock the camera or movement.
+
+Validation: 43 automated gameplay and effects tests; real Edge renders of all 58 high-rarity profiles and all 12 mutation layers at High and Low; persisted settings; two-client spawn seed/timestamp checks; quiet late join; purchase, delivery, and carry continuity. A 48-character mutated high-rarity stress scene used about 3,404 particles at High versus 151 at Low. Repeated creation/removal kept GPU geometry and texture counts stable, with no shader errors. Browser timings use software-rendered desktop Edge and are not physical-phone FPS claims.

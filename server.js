@@ -13,7 +13,7 @@ const { createThefts } = require('./thefts');
 function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey = process.env.OWNER_ACCESS_KEY || '' } = {}) {
   const app = express();
   app.get('/healthz', (_req, res) => res.json({ ok: true, protocol: 2 }));
-  for (const file of ['index.html', 'network.js', 'config.js', 'game-rules.js', 'movement.js', 'delivery-route.js', 'brainrot-art.js']) {
+  for (const file of ['index.html', 'network.js', 'config.js', 'game-rules.js', 'movement.js', 'delivery-route.js', 'brainrot-art.js', 'brainrot-vfx.js']) {
     app.get(file === 'index.html' ? ['/', '/index.html'] : '/' + file,
       (_req, res) => res.sendFile(path.join(__dirname, file)));
   }
