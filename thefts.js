@@ -3,7 +3,7 @@ const rules=require('./game-rules');
 const movement=require('./movement');
 function createThefts({members,event,roster}){
  const active=new Map();
- const reserved=c=>new Set([...active.values()].filter(t=>t.owner===c).map(t=>t.slot));
+ const reserved=c=>new Set([...active.values()].filter(t=>t.owner===c).map(t=>t.slot).concat([...(c.deliverySlots||new Map()).values()]));
  const free=c=>{const used=reserved(c),s=c.presence.s||[],n=c.presence.f2?16:8;for(let i=0;i<n;i++)if(!used.has(i)&&!(Number.isInteger(s[i])&&s[i]>=0))return i;return -1};
  function inventory(c,slot,value){c.presence.s=Array.from({length:16},(_,i)=>c.presence.s?.[i]??-1);c.presence.s[slot]=value;(c.inventoryPatches||=new Map()).set(slot,value)}
  function applyPresence(c,safe){

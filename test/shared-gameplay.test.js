@@ -44,7 +44,7 @@ test('disconnect returns the brainrot to its reserved slot, even with a stale in
 });
 test('rebirth immediately resets and saves $100 with an empty inventory',()=>{
  const html=fs.readFileSync(require.resolve('../index.html'),'utf8'),fn=html.match(/function performRebirth\(\)\{[^\n]+/)[0];
- const ctx=vm.createContext({cash:50000,reb:0,mine:Array(16).fill({}),carry:null,heist:null,raid:null,esc:null,pendingTaken:new Map(),BrainrotRules:rules,toast:()=>{},sync:()=>{},rebCost:()=>50000});
+ const ctx=vm.createContext({cash:50000,reb:0,mine:Array(16).fill({}),carry:null,heist:null,raid:null,esc:null,pendingTaken:new Map(),pendingDeliveries:new Map(),BrainrotRules:rules,toast:()=>{},sync:()=>{},rebCost:()=>50000});
  vm.runInContext('function save(){saved={cash,reb,mine:mine.slice()}};'+fn,ctx);assert.equal(vm.runInContext('performRebirth()',ctx),true);assert.equal(ctx.cash,100);assert.equal(ctx.reb,1);assert.equal(ctx.saved.cash,100);assert.ok(ctx.saved.mine.every(x=>x===null));
 });
 test('the same rebirth cannot be used to erase an in-flight stolen brainrot',()=>{

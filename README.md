@@ -26,7 +26,7 @@ Update the repository files with this build. Use your existing Node web service 
 
 When the game and server are on the same Render address, leave `config.js` empty as supplied. The client automatically uses `wss://<your-service>/ws` on HTTPS. Render provides the listening port through `PORT`; the server binds to `0.0.0.0`.
 
-When the game is on a separate static host, deploy only `index.html`, `network.js`, `config.js`, `game-rules.js`, and `movement.js` there. Set `window.BRAINROT_SERVER_URL` in that host's `config.js` to your actual Render HTTPS origin or full secure WebSocket URL ending in `/ws`. Deploy the updated `server.js` on Render as well: a frontend-only update cannot enable trades and second-floor synchronization on the old backend.
+When the game is on a separate static host, deploy only `index.html`, `network.js`, `config.js`, `game-rules.js`, `movement.js`, and `delivery-route.js` there. Set `window.BRAINROT_SERVER_URL` in that host's `config.js` to your actual Render HTTPS origin or full secure WebSocket URL ending in `/ws`. Deploy the updated `server.js` on Render as well: a frontend-only update cannot enable trades and second-floor synchronization on the old backend.
 
 Render documentation:
 - https://render.com/docs/deploy-node-express-app
@@ -59,7 +59,7 @@ Open `/owner` and sign in with your private owner password. Set `OWNER_ACCESS_KE
 
 ## Verification
 
-Twenty-nine automated tests pass, using real WebSocket clients against the actual server and the actual remote animation and owner UI routines. They cover script loading and syntax, two-player presence, trades, room isolation, admin authorization, reconnect/rejoin, lobby counts, the eight-player limit, invalid codes, and same-origin URL handling. Two real browser sessions additionally verified matching belt items, high-index admin mutations, carrying restrictions, bonk returns and visible ragdolls, Space jumping, and contested purchases. Desktop and touch layouts were visually checked.
+Thirty-seven automated tests pass, using real WebSocket clients against the actual server and the actual remote animation and owner UI routines. They cover script loading and syntax, two-player presence, trades, room isolation, admin authorization, reconnect/rejoin, lobby counts, the eight-player limit, invalid codes, and same-origin URL handling. Two real browser sessions additionally verified matching belt items, high-index admin mutations, carrying restrictions, bonk returns and visible ragdolls, Space jumping, and contested purchases. Desktop and touch layouts were visually checked.
 
 The existing service is https://brainrot-heist-3d.onrender.com. After deployment, /healthz should return protocol 2. Verify two clients in a shared lobby before inviting players.
 
@@ -69,6 +69,10 @@ Progress remains stored in each browser's localStorage. A new domain has separat
 
 ## Shared belt and movement
 
-Each lobby has one server-run belt, including admin spawns, auto-spawns, mutations and guaranteed rarity timers. Item IDs and positions are sent to all players and late joiners. A purchase removes the same item for everyone, and simultaneous buyers cannot both receive it. Owner-only base grants synchronize all 1,898 item variants.
+Each lobby has one server-run belt, including admin spawns, auto-spawns, mutations and guaranteed rarity timers. Item IDs and positions are sent to all players and late joiners. A purchase sends the same item walking to the buyer’s reserved base slot. Before it arrives, another nearby player may purchase it at the listed price to redirect it; the previous buyer is refunded. Simultaneous clicks against the same item revision resolve once. Inventory and income begin only on arrival. Leaving a lobby cancels and refunds pending deliveries. Owner-only base grants synchronize all 1,898 item variants.
 
 Space jumps; Shift sprints. Touch players have Jump and Sprint buttons. Carrying prevents sprinting and hitting. Base back and side walls block movement, including jump and knockback movement, while entrances stay open unless locked for visitors. A bonk throws the victim into an animated ragdoll and blocks movement and actions for 1.5 seconds. Refresh every client after deploying.
+
+## Touch recovery
+
+Movement and camera touches are tracked separately. Global pointer release/cancel, lost capture, and touch identifiers clear the joystick even when its original release is missed. Blur, hidden pages, page exits, orientation changes, and opening a modal reset controls. Real touch-browser tests cover releasing the joystick while holding a camera finger, cancelling a touch, starting again, and toggling sprint.

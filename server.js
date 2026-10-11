@@ -13,7 +13,7 @@ const { createThefts } = require('./thefts');
 function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey = process.env.OWNER_ACCESS_KEY || '' } = {}) {
   const app = express();
   app.get('/healthz', (_req, res) => res.json({ ok: true, protocol: 2 }));
-  for (const file of ['index.html', 'network.js', 'config.js', 'game-rules.js', 'movement.js']) {
+  for (const file of ['index.html', 'network.js', 'config.js', 'game-rules.js', 'movement.js', 'delivery-route.js']) {
     app.get(file === 'index.html' ? ['/', '/index.html'] : '/' + file,
       (_req, res) => res.sendFile(path.join(__dirname, file)));
   }
@@ -69,7 +69,7 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
           return send(ws, { type: 'join', room: m.room, ok: false, error: 'Lobby full' });
         const old = c.room;
         if (old !== m.room) {
-          thefts.release(c);
+          worlds.release(c); thefts.release(c);
           const occupied = new Set(members(m.room).map(x => x.baseSlot));
           c.baseSlot = rules.bases.findIndex((_base, index) => !occupied.has(index));
           c.presence = {}; c.inventoryPatches = new Map(); c.stunUntil = 0;
@@ -79,7 +79,7 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
         if (old !== c.room) roster(old);
         roster(c.room); lobbies(); worlds.snapshot(c);
       } else if (m.type === 'leave') {
-        const old = c.room; thefts.release(c); c.room = null; c.baseSlot = null; c.presence = {}; c.inventoryPatches = new Map();
+        const old = c.room; worlds.release(c); thefts.release(c); c.room = null; c.baseSlot = null; c.presence = {}; c.inventoryPatches = new Map();
         roster(old); lobbies();
       } else if (m.type === 'presence') {
         if (!c.room || !m.data || typeof m.data !== 'object' || Array.isArray(m.data)) return;
@@ -130,7 +130,7 @@ function createGameServer({ adminToken = process.env.ADMIN_TOKEN || '', ownerKey
         }
       }
     });
-    ws.on('close', () => { const old = c.room; thefts.release(c); clients.delete(ws); roster(old); lobbies(); });
+    ws.on('close', () => { const old = c.room; worlds.release(c); thefts.release(c); clients.delete(ws); roster(old); lobbies(); });
     ws.on('error', () => {});
   });
   const heartbeat = setInterval(() => {
